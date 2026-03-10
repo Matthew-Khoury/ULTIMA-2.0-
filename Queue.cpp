@@ -3,8 +3,9 @@
 #inlcude <pthread.h>
 #include <unistd.h>
 #include <queue.h>
-#include "semaphores.cpp"
+#include "Semaphores.cpp"
 
 void* worker(void* arg);
 
 Semaphore sem(1);
+//needs a print function 
