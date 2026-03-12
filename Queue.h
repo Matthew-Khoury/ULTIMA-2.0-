@@ -69,7 +69,7 @@ TYPE Queue<TYPE>::De_Q() {
 
 template <class TYPE>
 int Queue<TYPE>::isEmpty() {
-	return (count == 0) ? TRUE : FALSE;   // return 1 (TRUE) or 2 (FALSE)
+	return (count == 0) ? TRUE : FALSE;   // return 1 (TRUE) or 0 (FALSE)
 }
 
 template <class TYPE>
