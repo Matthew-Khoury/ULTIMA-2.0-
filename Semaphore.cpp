@@ -1,4 +1,4 @@
-#include "Sema.h"
+#include "Semaphore.h"
 #include <iostream>
 #include <unistd.h>
 
