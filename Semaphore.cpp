@@ -2,23 +2,23 @@
 #include <iostream>
 #include <unistd.h>
 
-// Constructor - Initializes semaphore value, mutex, condition variable, and queue
-Semaphore::Semaphore(int initialValue, string name, scheduler *theScheduler) {
-    sema_value = initialValue;
+using std::cout;
+using std::endl;
+
+// Constructor
+Semaphore::Semaphore(int initialValue, string name, scheduler* theScheduler) {
+    sema_value   = initialValue;
     resource_name = name;
-    lucky_task = -1;
+    lucky_task   = -1;
 
     pthread_mutex_init(&lock, nullptr);
     pthread_cond_init(&cond, nullptr);
 
-    // Queue stores thread IDs waiting for the semaphore
     sema_queue = new Queue<int>();
-    
-    // register the scheduler with the semaphore
-    sched_ptr = theScheduler;
+    sched_ptr  = theScheduler;
 }
 
-// Destructor - cleans up queue and pthread sync objects
+// Destructor
 Semaphore::~Semaphore() {
     delete sema_queue;
 
@@ -26,94 +26,101 @@ Semaphore::~Semaphore() {
     pthread_cond_destroy(&cond);
 }
 
-// down(): attempts to obtain a semaphore
-// -  if taskID == lucky_task: skip operation
-// -  if sema_value >= 1: decrement and continue
-// -  if sema_value == 0: block the thread and put in the queue
-// Uses pthread_cond_wait() to avoid busy waiting
+// down(): attempt to acquire the resource
 void Semaphore::down(int taskID) {
     pthread_mutex_lock(&lock);
 
-    // Enter critical section
     if (taskID == lucky_task) {
-        cout << "Task # " << lucky_task << " already has the resource!  Ignore the request" << std::endl;
+        cout << "Task #" << lucky_task
+             << " already has the resource! Ignoring request." << endl;
         dump();
     } else {
-        if (sema_value >= 1) {
-            // Resource available → decrement
+        if (sema_value > 0) {
+            // Resource available
             sema_value--;
-            lucky_task = taskID;  // preserve the taskID that got the resource
+            lucky_task = taskID;
             dump();
-        }
-        else {
-            sema_queue->En_Q(taskID);            // Add thread ID to Queue
-            sched_ptr->set_state(taskID, BLOCKED);  // No resource available → block
+        } else {
+            // No resource → block
+            sema_queue->En_Q(taskID);
+            sched_ptr->set_state(taskID, BLOCKED);
             dump();
 
-            // Block until signaled by up()
-            // pthread_cond_wait() releases the mutex while waiting and re-acquires it before returning
-            do {
-                sched_ptr->yield();
+            // Wait until someone does up() and signals
+            while (sema_value == 0) {
+                sched_ptr->yield();              // let scheduler run others
                 dump();
-                pthread_cond_wait(&cond, &lock);
-            } while (sema_value < 0);
+                pthread_cond_wait(&cond, &lock); // sleep until signaled
+            }
 
-            std::cout << "\tThread " << taskID
-                      << " has been released and re-acquired the mutex" << std::endl;
+            // We were woken up and resource is now available
+            sema_value--;
+            lucky_task = taskID;
+            cout << "\tTask " << taskID
+                 << " has been released and acquired the resource" << endl;
+            dump();
         }
     }
-    // Exit critical section
+
     pthread_mutex_unlock(&lock);
 }
 
-// up(): releases the semaphore
-//   - if threads are waiting → dequeue one and signal it
-//   - else → increment sema_value
+// up(): release the resource
 void Semaphore::up() {
-    int taskID;
-
     pthread_mutex_lock(&lock);
 
-    cout << "TaskID: " << sched_ptr.get_task_id() << " LuckyID: " << lucky_task << endl;
-    if (sched_ptr.get_task_id() == lucky_task) {   // check to see if the correct task is doing the up()
+    int current_id = sched_ptr->get_task_id();
+    cout << "TaskID: " << current_id
+         << " LuckyID: " << lucky_task << endl;
+
+    if (current_id == lucky_task) {   // only owner can release
         if (sema_queue->isEmpty()) {
+            // No one waiting → just increment
             sema_value++;
             lucky_task = -1;
             dump();
         } else {
-            taskID = sema_queue->De_Q();         // remove from Queue and unblock
-            sched_ptr->set_state(taskID, READY); // set the task to READY
-            cout << "Unblock: " << taskID << " and release from the queue" << endl;
+            // Someone is waiting → wake one
+            int taskID = sema_queue->De_Q();
+            sched_ptr->set_state(taskID, READY);
+            cout << "Unblock task " << taskID
+                 << " and release from the queue" << endl;
+
+            // Make resource available for the woken task
+            sema_value = 1;
+            lucky_task = -1;
+
+            pthread_cond_signal(&cond);  // wake one waiter
             dump();
+
+            // Let scheduler pick the next READY task
             sched_ptr->yield();
             dump();
         }
     } else {
-        cout << "Invalid Semaphore UP().  TaskID: " << sched_ptr.get_task_id() <<
-                " does not own the resource" << endl;
+        cout << "Invalid Semaphore::up(). TaskID " << current_id
+             << " does not own the resource." << endl;
         dump();
     }
 
-    // Exit critical section
     pthread_mutex_unlock(&lock);
 }
 
 void Semaphore::dump() {
     pthread_mutex_lock(&lock);
 
-    std::cout << "\nSemaphore Dump:\n";
-    std::cout << "Resource:      " << resource_name << "\n";
-    std::cout << "Sema_value:    " << sema_value << "\n";
-    std::cout << "Sema_queue:    ";
+    cout << "\nSemaphore Dump:\n";
+    cout << "Resource:      " << resource_name << "\n";
+    cout << "Sema_value:    " << sema_value << "\n";
+    cout << "Sema_queue:    ";
 
     if (sema_queue->isEmpty()) {
-        std::cout << "(empty)";
+        cout << "(empty)";
     } else {
-        // Print queue contents in FIFO order
-        std::cout << sema_queue->Get_Q_String();
+        cout << sema_queue->Get_Q_String();
     }
 
-    std::cout << "\n\n";
+    cout << "\n\n";
 
     pthread_mutex_unlock(&lock);
 }
