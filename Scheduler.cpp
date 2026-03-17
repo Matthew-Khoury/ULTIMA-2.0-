@@ -135,21 +135,3 @@ void dump(){
 
 
 };
-
-int main(){
-    scheduler swapper;
-    int t_id;
-
-    for(int i = 0; i< 4; i++)
-    t_id = swapper.create_task();
-
-    swapper.dump();
-    swapper.start();
-    swapper.dump();
-
-    for(int i = 0; i<3; i++){
-        waste_time(3);
-        swapper.yield();
-        swapper.dump();
-    }
-}
