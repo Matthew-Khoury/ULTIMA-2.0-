@@ -1,4 +1,4 @@
-#include "ULTIMA.h"
+#include "Ultima.h"
 
 #include <cstdio>
 #include <string>
