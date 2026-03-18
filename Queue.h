@@ -4,10 +4,6 @@
 #include <iostream>
 #include <sstream>
 
-// This Queue is based off of the template from Lab 10
-#define TRUE 1
-#define FALSE 0
-
 // ------------------ DECLARATION ------------------
 template <class TYPE>
 class Queue {
@@ -15,9 +11,9 @@ public:
     Queue();
     ~Queue();
 
-    void En_Q(TYPE value);     // (fixed) pass-by-value instead of TYPE&
+    void En_Q(TYPE value);
     TYPE De_Q();
-    int isEmpty();
+    bool isEmpty();
     void Print();
     std::string Get_Q_String();
 
@@ -69,8 +65,8 @@ TYPE Queue<TYPE>::De_Q() {
 }
 
 template <class TYPE>
-int Queue<TYPE>::isEmpty() {
-    return (count == 0) ? TRUE : FALSE;
+bool Queue<TYPE>::isEmpty() {
+    return (count == 0);
 }
 
 template <class TYPE>
