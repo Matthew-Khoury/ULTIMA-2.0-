@@ -14,7 +14,7 @@ scheduler::scheduler() {
 }
 
 scheduler::~scheduler() {
-    cout << "Exiting Scheduler..." << endl;
+    // cout << "Exiting Scheduler..." << endl;
 }
 
 void scheduler::set_quantum(long quantum) {
@@ -37,14 +37,22 @@ int scheduler::get_task_id() {
     return (current != nullptr) ? current->task_id : -1;  // will return the current task
 }
 
+int scheduler::get_task_count() {
+    return next_available_task_id;
+}
+
+clock_t scheduler::get_elapsed_time(int the_taskid) {
+    return clock() - task_table[the_taskid].start_time;
+}
+
 int scheduler::create_task() {
     if (next_available_task_id >= MAX_TASKS) {
-        cout << "Create_task FAILED: MAX_TASKS exceeded." << endl;
+        // cout << "Create_task FAILED: MAX_TASKS exceeded." << endl;
         return -1; //return error
     }
 
     int id = next_available_task_id;
-    cout << "Creating task #" << id << endl;
+    // cout << "Creating task #" << id << endl;
 
     tcb* new_task = &task_table[id];
     new_task->task_id = id;
@@ -67,12 +75,12 @@ int scheduler::create_task() {
 }
 
 void scheduler::start() {
-    cout << "-----------------------------" << endl;
-    cout << "       SCHEDULER STARTED     " << endl;
-    cout << "-----------------------------" << endl;
+    // cout << "-----------------------------" << endl;
+    // cout << "       SCHEDULER STARTED     " << endl;
+    // cout << "-----------------------------" << endl;
 
     if (!current) {
-        cout << "No tasks to schedule!" << endl;
+        // cout << "No tasks to schedule!" << endl;
         return;
     }
 
@@ -87,17 +95,17 @@ void scheduler::start() {
 void scheduler::yield() {
     if (!current) return;
 
-    cout << "Task #" << current->task_id << " attempting to yield..." << endl;
+    // cout << "Task #" << current->task_id << " attempting to yield..." << endl;
 
     clock_t elapsed = clock() - current->start_time;
-    cout << "Elapsed time: " << elapsed << endl;
+    // cout << "Elapsed time: " << elapsed << endl;
 
     if (elapsed < current_quantum) {
-        cout << "NO YIELD — quantum remaining." << endl;
+        // cout << "NO YIELD — quantum remaining." << endl;
         return;
     }
 
-    cout << "Yielding... switching tasks." << endl;
+    // cout << "Yielding... switching tasks." << endl;
 
     //if running, we should change it to ready since the quantum time has run out
     if (current->state == RUNNING)
@@ -113,14 +121,14 @@ void scheduler::yield() {
     }
 
     if (counter >= MAX_TASKS) {
-        cout << "DEADLOCK DETECTED — no READY tasks." << endl;
+        // cout << "DEADLOCK DETECTED — no READY tasks." << endl;
         return;
     }
 
     current->start_time = clock();
     current->state = RUNNING;
 
-    cout << "Now running task #" << current->task_id << endl;
+    // cout << "Now running task #" << current->task_id << endl;
 }
 
 void scheduler::dump() {

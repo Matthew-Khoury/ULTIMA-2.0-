@@ -26,43 +26,59 @@ Semaphore::~Semaphore() {
     pthread_cond_destroy(&cond);
 }
 
+string Semaphore::get_resource_name() {
+    return resource_name;
+}
+
+int Semaphore::get_sema_value() {
+    return sema_value;
+}
+
+int Semaphore::get_lucky_task() {
+    return lucky_task;
+}
+
+string Semaphore::get_queue_string() {
+    if (sema_queue->isEmpty()) {
+        return "(empty)";
+    } else {
+        return sema_queue->Get_Q_String();
+    }
+}
+
 // down(): attempt to acquire the resource
 void Semaphore::down(int taskID) {
+    bool blocked_task = false;
+
     pthread_mutex_lock(&lock);
 
+    // NEW: if task is already BLOCKED, ignore request
+    if (sched_ptr->get_state(taskID) == BLOCKED) {
+        pthread_mutex_unlock(&lock);
+        return;
+    }
+
     if (taskID == lucky_task) {
-        cout << "Task #" << lucky_task
-             << " already has the resource! Ignoring request." << endl;
-        dump();
+        // already owns resource → do nothing
     } else {
         if (sema_value > 0) {
             // Resource available
             sema_value--;
             lucky_task = taskID;
-            dump();
         } else {
-            // No resource → block
+            // No resource → block logically
             sema_queue->En_Q(taskID);
             sched_ptr->set_state(taskID, BLOCKED);
-            dump();
-
-            // Wait until someone does up() and signals
-            while (sema_value == 0) {
-                sched_ptr->yield();              // let scheduler run others
-                dump();
-                pthread_cond_wait(&cond, &lock); // sleep until signaled
-            }
-
-            // We were woken up and resource is now available
-            sema_value--;
-            lucky_task = taskID;
-            cout << "\tTask " << taskID
-                 << " has been released and acquired the resource" << endl;
-            dump();
+            blocked_task = true;
         }
     }
 
     pthread_mutex_unlock(&lock);
+
+    // yield after unlocking to avoid deadlock
+    if (blocked_task) {
+        sched_ptr->yield();
+    }
 }
 
 // up(): release the resource
@@ -70,37 +86,23 @@ void Semaphore::up() {
     pthread_mutex_lock(&lock);
 
     int current_id = sched_ptr->get_task_id();
-    cout << "TaskID: " << current_id
-         << " LuckyID: " << lucky_task << endl;
 
     if (current_id == lucky_task) {   // only owner can release
         if (sema_queue->isEmpty()) {
-            // No one waiting → just increment
-            sema_value++;
-            lucky_task = -1;
-            dump();
-        } else {
-            // Someone is waiting → wake one
-            int taskID = sema_queue->De_Q();
-            sched_ptr->set_state(taskID, READY);
-            cout << "Unblock task " << taskID
-                 << " and release from the queue" << endl;
-
-            // Make resource available for the woken task
+            // No one waiting → resource becomes free
             sema_value = 1;
             lucky_task = -1;
+        } else {
+            // Someone waiting → transfer ownership
+            int taskID = sema_queue->De_Q();
+            sched_ptr->set_state(taskID, READY);
 
-            pthread_cond_signal(&cond);  // wake one waiter
-            dump();
-
-            // Let scheduler pick the next READY task
-            sched_ptr->yield();
-            dump();
+            // Give resource directly to next task
+            sema_value = 0;
+            lucky_task = taskID;
         }
     } else {
-        cout << "Invalid Semaphore::up(). TaskID " << current_id
-             << " does not own the resource." << endl;
-        dump();
+        // invalid release
     }
 
     pthread_mutex_unlock(&lock);

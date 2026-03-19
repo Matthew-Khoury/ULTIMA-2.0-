@@ -27,6 +27,11 @@ public:
 	void down(int taskID);
 	void up();
 	void dump();
+
+	string get_resource_name();
+	int get_sema_value();
+	int get_lucky_task();
+	string get_queue_string();
 };
 
 #endif

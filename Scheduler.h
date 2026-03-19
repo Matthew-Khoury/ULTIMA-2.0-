@@ -40,6 +40,8 @@ public:
     string get_state(int the_taskid);
 
     int get_task_id();
+    int get_task_count();
+    clock_t get_elapsed_time(int the_taskid);
 
     int create_task();
     void start();
