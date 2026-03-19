@@ -12,10 +12,11 @@ ULTIMA::ULTIMA()
       sema_win_(nullptr),
       log_win_(nullptr),
       console_win_(nullptr),
+      scheduler_(),
+      resource1_(1, "Resource1", &scheduler_),
       running_(true),
       log_line_(1)
 {
-    // TODO: create scheduler and initialize tasks
 }
 
 // Destructor
@@ -38,11 +39,11 @@ void ULTIMA::init_curses()
 
     refresh();
 
-    heading_win_ = create_window(5, 96, 1, 2);
-    task_win_    = create_window(12, 52, 7, 2);
-    sema_win_    = create_window(12, 52, 7, 56);
-    log_win_     = create_window(12, 72, 20, 2);
-    console_win_ = create_window(12, 34, 20, 75);
+    heading_win_ = create_window(6, 96, 1, 2);
+    task_win_    = create_window(12, 52, 8, 2);
+    sema_win_    = create_window(12, 52, 8, 56);
+    log_win_     = create_window(12, 72, 21, 2);
+    console_win_ = create_window(12, 34, 21, 75);
 
     draw_log("----- ULTIMA Log Started -----");
 }
@@ -73,7 +74,12 @@ void ULTIMA::initialize_scheduler()
 {
     draw_log("Scheduler started.");
 
-    // TODO: initialize scheduler and create tasks
+    for (int i = 0; i < MAX_TASKS; i++)
+    {
+        scheduler_.create_task();
+    }
+
+    scheduler_.start();
 }
 
 // draw_heading()
@@ -83,7 +89,26 @@ void ULTIMA::draw_heading()
     werase(heading_win_);
     box(heading_win_, 0, 0);
 
+    int current_task_id = scheduler_.get_task_id();
+    long quantum = scheduler_.get_quantum();
+    clock_t elapsed = 0;
+    long remaining = quantum;
+
+    if (current_task_id >= 0)
+    {
+        elapsed = scheduler_.get_elapsed_time(current_task_id);
+        remaining = quantum - (long)elapsed;
+
+        if (remaining < 0)
+        {
+            remaining = 0;
+        }
+    }
+
     mvwprintw(heading_win_, 1, 2, "ULTIMA Project");
+    mvwprintw(heading_win_, 2, 2, "Current Task ID: %d", current_task_id);
+    mvwprintw(heading_win_, 3, 2, "Quantum: %ld", quantum);
+    mvwprintw(heading_win_, 4, 2, "Elapsed: %ld   Remaining: %ld", (long)elapsed, remaining);
 
     wrefresh(heading_win_);
 }
@@ -103,7 +128,27 @@ void ULTIMA::draw_tasks()
     mvwprintw(task_win_, 4, 2,
               "----------------------------------------------");
 
-    // TODO: show scheduler process table
+    for (int i = 0; i < scheduler_.get_task_count(); i++)
+    {
+        std::string task_name = "Task " + std::to_string(i);
+        std::string etc_text;
+
+        if (i == scheduler_.get_task_id())
+        {
+            etc_text = "Running";
+        }
+        else
+        {
+            etc_text = std::to_string((int)scheduler_.get_elapsed_time(i));
+        }
+
+        mvwprintw(task_win_, 5 + i, 2,
+                  "%-12s %-8d %-10s %-8s",
+                  task_name.c_str(),
+                  i,
+                  scheduler_.get_state(i).c_str(),
+                  etc_text.c_str());
+    }
 
     wrefresh(task_win_);
 }
@@ -116,11 +161,10 @@ void ULTIMA::draw_semaphore()
     box(sema_win_, 0, 0);
 
     mvwprintw(sema_win_, 1, 2, "Semaphore Dump:");
-    mvwprintw(sema_win_, 3, 2, "Resource:");
-    mvwprintw(sema_win_, 4, 2, "Sema_value:");
-    mvwprintw(sema_win_, 5, 2, "Sema_queue:");
-
-    // TODO: show semaphore state
+    mvwprintw(sema_win_, 3, 2, "Resource: %s", resource1_.get_resource_name().c_str());
+    mvwprintw(sema_win_, 4, 2, "Sema_value: %d", resource1_.get_sema_value());
+    mvwprintw(sema_win_, 5, 2, "Sema_queue: %s", resource1_.get_queue_string().c_str());
+    mvwprintw(sema_win_, 6, 2, "Lucky_task: %d", resource1_.get_lucky_task());
 
     wrefresh(sema_win_);
 }
@@ -159,9 +203,10 @@ void ULTIMA::draw_console()
     mvwprintw(console_win_, 3, 2, "n : Yield to next task");
     mvwprintw(console_win_, 4, 2, "d : Request resource");
     mvwprintw(console_win_, 5, 2, "u : Release resource");
-    mvwprintw(console_win_, 6, 2, "k : Kill current task");
-    mvwprintw(console_win_, 7, 2, "g : Garbage collect");
-    mvwprintw(console_win_, 8, 2, "q : Quit");
+    mvwprintw(console_win_, 6, 2, "w : Waste CPU time");
+    mvwprintw(console_win_, 7, 2, "k : Kill current task");
+    mvwprintw(console_win_, 8, 2, "g : Garbage collect");
+    mvwprintw(console_win_, 9, 2, "q : Quit");
 
     wrefresh(console_win_);
 }
@@ -176,6 +221,15 @@ void ULTIMA::draw_all()
     draw_console();
 }
 
+void ULTIMA::waste_time(int factor)
+{
+    volatile long counter = 0;
+    for (long i = 0; i < factor * 10000000L; i++)
+    {
+        counter += i % 3;
+    }
+}
+
 // handle_input()
 // Handles keyboard inputs from the console
 void ULTIMA::handle_input(int ch)
@@ -183,18 +237,39 @@ void ULTIMA::handle_input(int ch)
     switch (ch)
     {
         case 'n':
+        {
+            int before = scheduler_.get_task_id();
+
             draw_log("Task yield requested.");
-            // TODO: scheduler yield function
+            scheduler_.yield();
+
+            int after = scheduler_.get_task_id();
+
+            if (after == before)
+            {
+                draw_log("Not enough quantum used. Waste more CPU time.");
+            }
+            else
+            {
+                draw_log("Switched to task " + std::to_string(after));
+            }
+
             break;
+        }
 
         case 'd':
             draw_log("Semaphore down requested.");
-            // TODO: semaphore request resource
+            resource1_.down(scheduler_.get_task_id());
             break;
 
         case 'u':
             draw_log("Semaphore up requested.");
-            // TODO: semaphore release resource
+            resource1_.up();
+            break;
+
+        case 'w':
+            draw_log("Wasting CPU time...");
+            waste_time(50);
             break;
 
         case 'k':
