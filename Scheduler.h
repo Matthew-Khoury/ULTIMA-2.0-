@@ -48,6 +48,8 @@ public:
     void yield ();
 
     void dump();
+    void kill();
+    void garbage();
 
 };
 

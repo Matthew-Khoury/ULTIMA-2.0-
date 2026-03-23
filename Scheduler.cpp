@@ -151,4 +151,35 @@ void scheduler::dump() {
     }
 
     cout << "------------------------------------------------" << endl;
+
 }
+void scheduler:: kill(){
+    if(!current)return;
+    current.state = DEAD;
+    yield(); // proceed to the next task 
+
+}
+void scheduler :: garbage(){
+    if(!current || next_available_task_id ==0) return;
+
+    tcb* prev =tail; 
+    tcb* curr = current;
+
+    for (int i = 0; i < next_available_task_id; i++){
+        if(curr->state ==DEAD){
+            prev-> next = curr->next; //this skips the node we want to remove by have the previous task point to the next task
+            if(tail == curr){ //since this a circular linked list, if the dead task is the tail, we will update the tail to be the previous task
+                tail = prev;
+            }  
+            if(current == curr){
+                current = curr->next; // updating where the current node is pointing to
+            }      
+        curr = prev->next;
+        }else{
+        prev = curr;
+        curr = curr->next;
+        }
+    }
+
+}
+
