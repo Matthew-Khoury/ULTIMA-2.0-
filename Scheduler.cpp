@@ -155,7 +155,7 @@ void scheduler::dump() {
 }
 void scheduler:: kill(){
     if(!current)return;
-    current.state = DEAD;
+    current->state = DEAD;
     yield(); // proceed to the next task 
 
 }
