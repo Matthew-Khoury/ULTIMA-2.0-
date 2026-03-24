@@ -52,21 +52,21 @@ void Semaphore::down(int taskID) {
 
     pthread_mutex_lock(&lock);
 
-    // NEW: if task is already BLOCKED, ignore request
+    // if task is already BLOCKED, ignore request
     if (sched_ptr->get_state(taskID) == BLOCKED) {
         pthread_mutex_unlock(&lock);
         return;
     }
 
     if (taskID == lucky_task) {
-        // already owns resource → do nothing
+        // already owns resource then do nothing
     } else {
         if (sema_value > 0) {
             // Resource available
             sema_value--;
             lucky_task = taskID;
         } else {
-            // No resource → block logically
+            // No resource then block logically
             sema_queue->En_Q(taskID);
             sched_ptr->set_state(taskID, BLOCKED);
             blocked_task = true;
@@ -93,7 +93,7 @@ void Semaphore::up() {
             sema_value = 1;
             lucky_task = -1;
         } else {
-            // Someone waiting → transfer ownership
+            // Someone waiting then transfer ownership
             int taskID = sema_queue->De_Q();
             sched_ptr->set_state(taskID, READY);
 

@@ -273,13 +273,26 @@ void ULTIMA::handle_input(int ch)
             break;
 
         case 'k':
+        {
+            int current_task = scheduler_.get_task_id();
+
             draw_log("Kill task requested.");
-            // TODO: scheduler kill task
+
+            if (resource1_.get_lucky_task() == current_task)
+            {
+                draw_log("Current task owns resource. Releasing resource first.");
+                resource1_.up();
+            }
+
+            scheduler_.kill();
+            draw_log("Task killed.");
             break;
+        }
 
         case 'g':
             draw_log("Garbage collection requested.");
-            // TODO: scheduler garbage collection
+            scheduler_.garbage();
+            draw_log("Garbage collection complete.");
             break;
 
         case 'q':

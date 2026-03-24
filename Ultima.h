@@ -42,7 +42,6 @@ private:
     void draw_console();
     void draw_all();
 
-    // TODO: Add support for kill and garbage collection commands
     void handle_input(int ch);
     void waste_time(int factor);
 };
