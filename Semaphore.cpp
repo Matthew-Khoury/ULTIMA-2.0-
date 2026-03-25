@@ -1,3 +1,6 @@
+/* Code Framework built from Lab 10
+Primary Author: Matthew Khoury*/
+
 #include "Semaphore.h"
 #include <iostream>
 #include <unistd.h>

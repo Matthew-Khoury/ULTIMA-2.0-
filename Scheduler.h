@@ -1,3 +1,7 @@
+// Code Framework built from Lab 10
+//Primary Author: Melanie Priestly 
+
+
 #ifndef SCHEDULER_H //prevents the header from being passed into a program more than once
 #define SCHEDULER_H
 

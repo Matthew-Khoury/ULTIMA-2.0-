@@ -1,3 +1,5 @@
+/* Code Framework built from Lab 6
+Primary Author: Dylan Hurt*/
 #include "Ultima.h"
 
 #include <cstdio>

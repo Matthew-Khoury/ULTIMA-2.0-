@@ -1,3 +1,5 @@
+#Primary Author Mattew Khoury
+
 cmake_minimum_required(VERSION 4.1)
 project(ULTIMA_2_0_)
 

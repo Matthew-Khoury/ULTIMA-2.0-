@@ -1,3 +1,6 @@
+/* Code Framework built from Lab 10
+Primary Author: Matthew Khoury*/
+
 #ifndef SEMAPHORE_H
 #define SEMAPHORE_H
 

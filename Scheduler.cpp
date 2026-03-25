@@ -1,3 +1,6 @@
+// Code Framework built from Lab 10
+//Primary Author: Melanie Priestly 
+
 #include "Scheduler.h"
 #include <unistd.h>   // for sleep()
 

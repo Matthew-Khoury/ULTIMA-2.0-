@@ -1,3 +1,5 @@
+//Primary Author: Dylan Hurt 
+
 #ifndef QUEUE_H
 #define QUEUE_H
 
