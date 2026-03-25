@@ -144,7 +144,7 @@ void scheduler::dump() {
                (int)elapsed_time,
                task_table[i].state.c_str());
 
-        if (current && i == current->task_id) // ** ask the group to
+        if (current && i == current->task_id) 
             cout << "  <--- CURRENT PROCESS";
 
         cout << endl;
