@@ -1,4 +1,4 @@
-//Primary Author: Dylan Hurt 
+//Primary Author: Matthew Khoury
 
 #ifndef QUEUE_H
 #define QUEUE_H
