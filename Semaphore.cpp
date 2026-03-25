@@ -56,7 +56,7 @@ void Semaphore::down(int taskID) {
     pthread_mutex_lock(&lock);
 
     // if task is already BLOCKED, ignore request
-    if (sched_ptr->get_state(taskID) == BLOCKED) {
+    if (sched_ptr->get_state(taskID) == BLOCKED || sched_ptr->get_state(taskID) == DEAD) {
         pthread_mutex_unlock(&lock);
         return;
     }

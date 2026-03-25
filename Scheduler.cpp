@@ -114,16 +114,15 @@ void scheduler::yield() {
     if (current->state == RUNNING)
         current->state = READY;
 
-    // current_task = (current_task +1) % MAX_TASKS; from lab 12 replaced by the following line
-    current = current->next;
+    tcb* start = current;
 
-    int counter = 0;
-    while (current->state != READY && counter < MAX_TASKS-1) { //we are subtracting one because we can not surpase the max tasks
+    do {
         current = current->next;
-        counter++;
-    }
+        if (current->state == READY)
+            break;
+    } while (current != start);
 
-    if (counter >= MAX_TASKS) {
+    if (current->state != READY) {
         // cout << "DEADLOCK DETECTED — no READY tasks." << endl;
         return;
     }
@@ -139,60 +138,95 @@ void scheduler::dump() {
     cout << "Quantum = " << current_quantum << endl;
     cout << "Task ID\tElapsed\tState" << endl;
 
-    for (int i = 0; i < next_available_task_id; i++) {
-        clock_t elapsed_time = clock() - task_table[i].start_time;
+    bool has_active = false;
 
-        printf("%2d\t%6d\t%s",
-               task_table[i].task_id,
-               (int)elapsed_time,
-               task_table[i].state.c_str());
-
-        if (current && i == current->task_id) 
-            cout << "  <--- CURRENT PROCESS";
-
-        cout << endl;
+    if (current) {
+        tcb* temp = current;
+        do {
+            if (temp->state != DEAD) {
+                has_active = true;
+                break;
+            }
+            temp = temp->next;
+        } while (temp != current);
     }
 
-    cout << "------------------------------------------------" << endl;
+    if (!has_active) {
+        cout << "No active tasks." << endl;
+        cout << "------------------------------------------------" << endl;
+        return;
+    }
 
+    tcb* temp = current;
+
+    do {
+        if (temp->state != DEAD) {
+            clock_t elapsed_time = clock() - temp->start_time;
+
+            printf("%2d\t%6d\t%s",
+                   temp->task_id,
+                   (int)elapsed_time,
+                   temp->state.c_str());
+
+            if (temp == current)
+                cout << "  <--- CURRENT PROCESS";
+
+            cout << endl;
+        }
+
+        temp = temp->next;
+
+    } while (temp != current);
+
+    cout << "------------------------------------------------" << endl;
 }
+
 void scheduler:: kill(){
     if(!current)return;
     current->state = DEAD;
     yield(); // proceed to the next task 
-
 }
+
 void scheduler::garbage() {
-    if (!current || next_available_task_id == 0) return;
+    if (!current) return;
 
-    tcb* prev = tail;
-    tcb* curr = current;
+    bool foundDead = true;
 
-    for (int i = 0; i < next_available_task_id && current != nullptr; i++) {
-        if (curr->state == DEAD) {
+    while (foundDead && current != nullptr) {
+        foundDead = false;
 
-            // if this is the only node left
-            if (curr == prev) {
-                current = nullptr;
-                tail = nullptr;
-                return;
+        tcb* prev = tail;
+        tcb* curr = current;
+
+        do {
+            if (curr->state == DEAD) {
+
+                // Only one node in the list
+                if (curr == curr->next) {
+                    current = nullptr;
+                    tail = nullptr;
+                    return;
+                }
+
+                prev->next = curr->next;
+
+                if (curr == tail)
+                    tail = prev;
+
+                if (curr == current)
+                    current = curr->next;
+
+                foundDead = true;
+                break; //restart traversal after deletion
             }
 
-            prev->next = curr->next; // this skips the node we want to remove by have the previous task point to the next task
-
-            if (tail == curr) { // since this a circular linked list, if the dead task is the tail, we will update the tail to be the previous task
-                tail = prev;
-            }
-
-            if (current == curr) {
-                current = curr->next; // updating where the current node is pointing to
-            }
-
-            curr = prev->next;
-        } else {
             prev = curr;
             curr = curr->next;
-        }
+
+        } while (curr != current);
     }
 }
 
+tcb* scheduler::get_current() {
+    return current;
+}

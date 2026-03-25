@@ -126,32 +126,53 @@ void ULTIMA::draw_tasks()
     mvwprintw(task_win_, 3, 2,
               "%-12s %-8s %-10s %-8s",
               "TaskName", "TaskID", "State", "Etc.");
-
     mvwprintw(task_win_, 4, 2,
               "----------------------------------------------");
 
+    int line = 5;
+
+    // Loop over all tasks
     for (int i = 0; i < scheduler_.get_task_count(); i++)
     {
         std::string task_name = "Task " + std::to_string(i);
         std::string etc_text;
 
+        etc_text = std::to_string((int)scheduler_.get_elapsed_time(i));
+
+        // Show "Running" for the current task
         if (i == scheduler_.get_task_id() && scheduler_.get_state(i) != DEAD)
         {
             etc_text = "Running";
         }
-        else
+
+        // Check if task is physically in the circular list
+        // Only skip it if it has been removed by garbage()
+        tcb* node = scheduler_.get_current();
+        bool in_list = false;
+        if (node)
         {
-            etc_text = std::to_string((int)scheduler_.get_elapsed_time(i));
+            tcb* start = node;
+            do
+            {
+                if (node->task_id == i)
+                {
+                    in_list = true;
+                    break;
+                }
+                node = node->next;
+            } while (node != start);
         }
 
-        mvwprintw(task_win_, 5 + i, 2,
+        if (!in_list) continue;
+
+        mvwprintw(task_win_, line, 2,
                   "%-12s %-8d %-10s %-8s",
                   task_name.c_str(),
                   i,
                   scheduler_.get_state(i).c_str(),
                   etc_text.c_str());
+        line++;
     }
-
     wrefresh(task_win_);
 }
 

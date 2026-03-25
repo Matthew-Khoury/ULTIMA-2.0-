@@ -55,6 +55,7 @@ public:
     void kill();
     void garbage();
 
+    tcb *get_current();
 };
 
 #endif
