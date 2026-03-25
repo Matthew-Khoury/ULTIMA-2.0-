@@ -135,7 +135,7 @@ void ULTIMA::draw_tasks()
         std::string task_name = "Task " + std::to_string(i);
         std::string etc_text;
 
-        if (i == scheduler_.get_task_id())
+        if (i == scheduler_.get_task_id() && scheduler_.get_state(i) != DEAD)
         {
             etc_text = "Running";
         }
