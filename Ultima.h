@@ -20,6 +20,7 @@ private:
     WINDOW* heading_win_;
     WINDOW* task_win_;
     WINDOW* sema_win_;
+    WINDOW* mailbox_win_;
     WINDOW* log_win_;
     WINDOW* console_win_;
 
@@ -27,6 +28,7 @@ private:
     Semaphore resource1_;
 
     bool running_;
+    bool paused_;
 
     // log window tracking
     int log_line_;
@@ -39,6 +41,7 @@ private:
     void draw_tasks();
     void draw_semaphore();
     void draw_heading();
+    void draw_mailbox();
 
     void draw_log(const std::string& line);
     void draw_console();

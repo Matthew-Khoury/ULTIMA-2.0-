@@ -17,6 +17,7 @@ ULTIMA::ULTIMA()
       scheduler_(),
       resource1_(1, "Resource1", &scheduler_),
       running_(true),
+      paused_(false),
       log_line_(1)
 {
 }
@@ -37,7 +38,9 @@ void ULTIMA::init_curses()
     noecho();
     curs_set(0);
     keypad(stdscr, TRUE);
-    nodelay(stdscr, FALSE);
+
+    // non-blocking input so the simulation can keep running
+    nodelay(stdscr, TRUE);
 
     refresh();
 
@@ -223,13 +226,13 @@ void ULTIMA::draw_console()
     box(console_win_, 0, 0);
 
     mvwprintw(console_win_, 1, 2, "Console Commands");
-    mvwprintw(console_win_, 3, 2, "n : Yield to next task");
-    mvwprintw(console_win_, 4, 2, "d : Request resource");
-    mvwprintw(console_win_, 5, 2, "u : Release resource");
-    mvwprintw(console_win_, 6, 2, "w : Waste CPU time");
-    mvwprintw(console_win_, 7, 2, "k : Kill current task");
-    mvwprintw(console_win_, 8, 2, "g : Garbage collect");
-    mvwprintw(console_win_, 9, 2, "q : Quit");
+mvwprintw(console_win_, 3, 2, "p : Pause");
+mvwprintw(console_win_, 4, 2, "r : Resume");
+mvwprintw(console_win_, 5, 2, "d : Request resource");
+mvwprintw(console_win_, 6, 2, "u : Release resource");
+mvwprintw(console_win_, 7, 2, "k : Kill current task");
+mvwprintw(console_win_, 8, 2, "g : Garbage collect");
+mvwprintw(console_win_, 9, 2, "q : Quit");
 
     wrefresh(console_win_);
 }
@@ -247,7 +250,7 @@ void ULTIMA::draw_all()
 void ULTIMA::waste_time(int factor)
 {
     volatile long counter = 0;
-    for (long i = 0; i < factor * 10000000L; i++)
+    for (long i = 0; i < factor * 1000000L; i++)
     {
         counter += i % 3;
     }
@@ -259,26 +262,15 @@ void ULTIMA::handle_input(int ch)
 {
     switch (ch)
     {
-        case 'n':
-        {
-            int before = scheduler_.get_task_id();
-
-            draw_log("Task yield requested.");
-            scheduler_.yield();
-
-            int after = scheduler_.get_task_id();
-
-            if (after == before)
-            {
-                draw_log("Not enough quantum used. Waste more CPU time.");
-            }
-            else
-            {
-                draw_log("Switched to task " + std::to_string(after));
-            }
-
+        case 'p':
+            paused_ = true;
+            draw_log("System paused.");
             break;
-        }
+
+        case 'r':
+            paused_ = false;
+            draw_log("System resumed.");
+            break;
 
         case 'd':
             draw_log("Semaphore down requested.");
@@ -288,11 +280,6 @@ void ULTIMA::handle_input(int ch)
         case 'u':
             draw_log("Semaphore up requested.");
             resource1_.up();
-            break;
-
-        case 'w':
-            draw_log("Wasting CPU time...");
-            waste_time(50);
             break;
 
         case 'k':
@@ -322,6 +309,9 @@ void ULTIMA::handle_input(int ch)
             running_ = false;
             break;
 
+        case ERR:
+            break;
+
         default:
             draw_log("Unknown command.");
             break;
@@ -339,9 +329,24 @@ void ULTIMA::run()
 
     while (running_)
     {
-        draw_all();
         int ch = wgetch(stdscr);
-        handle_input(ch);
+
+        if (ch != ERR)
+        {
+            handle_input(ch);
+        }
+
+        // Free-flowing execution while not paused
+        if (!paused_)
+        {
+            waste_time(10);
+            scheduler_.yield();
+        }
+
+        draw_all();
+
+        // Slow the loop so the UI is readable
+        usleep(150000);
     }
 }
 
