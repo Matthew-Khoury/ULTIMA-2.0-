@@ -55,10 +55,10 @@ int ipc::Message_Receive(int task_id, Message* msg) {
         return 0;
     }
 
-    // Get the pointer from the queue
+    // Get the message pointer from the queue
     Message* queued_msg = (Message*)(intptr_t)task->mailbox.De_Q();
 
-    // Copy the data into the msg pointer provided by the caller
+    // Copy the data into the message pointer provided by the caller
     if (queued_msg != nullptr && msg != nullptr) {
         memcpy(msg, queued_msg, sizeof(Message));
 
@@ -71,7 +71,7 @@ int ipc::Message_Receive(int task_id, Message* msg) {
     return 1;
 }
 
-// Return the number of messages in Task-id’s message queue
+// Return the number of messages in task_id's message queue
 int ipc::Message_Count(int task_id) {
 
     if (task_id < 0 || task_id >= MAX_TASKS) {
