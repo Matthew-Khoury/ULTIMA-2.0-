@@ -2,6 +2,7 @@
 Primary Author: Matthew Khoury*/
 
 #include "Semaphore.h"
+#include "Scheduler.h"
 #include <iostream>
 #include <unistd.h>
 

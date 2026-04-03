@@ -5,35 +5,43 @@
 #ifndef SCHEDULER_H //prevents the header from being passed into a program more than once
 #define SCHEDULER_H
 
+#define MAX_TASKS 3
+
 #include <iostream>
 #include <string>
-#include <ctime>
+#include "Queue.h"
 
-using namespace std; 
+using namespace std;
 
-extern const string READY;  //"extern" implies that the defintion of the variable is somewhere else, in thsi case the .cpp file
+extern const string READY;  //"extern" implies that the definition of the variable is somewhere else, in this case the .cpp file
 extern const string RUNNING;
 extern const string BLOCKED;
 extern const string DEAD;
 
-const int MAX_TASKS = 3; //how do we determine the number of tasks allowed?
+class Semaphore;  // forward declaration
+class ipc;        // forward declaration
 
 struct tcb {
     int task_id;
     string state;
     clock_t start_time;
-    tcb *next;  //this line creates a pointer to the next node in the linked list
+    tcb* next;
+
+    // add mailbox pointer
+    Queue<int> mailbox;          // queue of message IDs (or pointers)
+
+    Semaphore* mailbox_sema = nullptr;
 };
 
 class scheduler{
-   
     tcb* current;
     tcb* tail;
     long current_quantum;
     int next_available_task_id;
-    tcb task_table[MAX_TASKS]; 
 
 public:
+    tcb task_table[MAX_TASKS];
+
     scheduler();
     ~scheduler();
 
@@ -56,6 +64,12 @@ public:
     void garbage();
 
     tcb *get_current();
+
+    tcb* get_task(int task_id) {
+        if (task_id >= 0 && task_id < MAX_TASKS)
+            return &task_table[task_id];
+        return nullptr;
+    }
 };
 
 #endif

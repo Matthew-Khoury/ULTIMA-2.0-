@@ -7,6 +7,7 @@ Primary Author: Dylan Hurt*/
 #include <ncurses.h>
 #include "Scheduler.h"
 #include "Semaphore.h"
+#include "MCB.h"
 
 class ULTIMA
 {
@@ -24,8 +25,7 @@ private:
     WINDOW* log_win_;
     WINDOW* console_win_;
 
-    scheduler scheduler_;
-    Semaphore resource1_;
+    MCB mcb_;
 
     bool running_;
     bool paused_;
@@ -37,7 +37,6 @@ private:
     void shutdown_curses();
     WINDOW* create_window(int height, int width, int y, int x);
 
-    void initialize_scheduler();
     void draw_tasks();
     void draw_semaphore();
     void draw_heading();

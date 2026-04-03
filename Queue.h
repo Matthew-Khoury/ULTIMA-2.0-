@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 // ------------------ DECLARATION ------------------
 template <class TYPE>
@@ -18,6 +19,7 @@ public:
     bool isEmpty();
     void Print();
     std::string Get_Q_String();
+    int Size();
 
 private:
     TYPE* data;     // dynamic array
@@ -48,7 +50,7 @@ Queue<TYPE>::~Queue() {
 template <class TYPE>
 void Queue<TYPE>::En_Q(TYPE value) {
     if (count == capacity) {
-        return;  // TODO: Discuss whether to implement resizing logic for the capacity of the queue
+        throw std::runtime_error("Queue full");
     }
     data[back] = value;             // assign the back of the queue as enqueued value
     back = (back + 1) % capacity;   // move the back index forward
@@ -69,6 +71,11 @@ TYPE Queue<TYPE>::De_Q() {
 template <class TYPE>
 bool Queue<TYPE>::isEmpty() {
     return (count == 0);
+}
+
+template <class TYPE>
+int Queue<TYPE>::Size() {
+    return count;
 }
 
 template <class TYPE>

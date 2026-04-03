@@ -1,7 +1,10 @@
 // Code Framework built from Lab 10
-//Primary Author: Melanie Priestly 
+// Primary Author: Matthew Khoury
+// Co-contributor Melanie Priestly
 
 #include "Scheduler.h"
+#include "Semaphore.h"
+#include "IPC.h"
 #include <unistd.h>   // for sleep()
 
 const string READY   = "Ready";
@@ -14,10 +17,21 @@ scheduler::scheduler() {
     tail = nullptr;
     next_available_task_id = 0;   //start the system start at 0
     current_quantum = 300;
+
+    // Initialize each tcb's mailbox semaphore with this scheduler
+    for (int i = 0; i < MAX_TASKS; i++) {
+        task_table[i].mailbox_sema = nullptr;
+    }
 }
 
 scheduler::~scheduler() {
-    // cout << "Exiting Scheduler..." << endl;
+    // Delete mailbox semaphores
+    for (int i = 0; i < next_available_task_id; i++) {
+        if (task_table[i].mailbox_sema != nullptr) {
+            delete task_table[i].mailbox_sema;
+            task_table[i].mailbox_sema = nullptr;
+        }
+    }
 }
 
 void scheduler::set_quantum(long quantum) {
@@ -49,20 +63,17 @@ clock_t scheduler::get_elapsed_time(int the_taskid) {
 }
 
 int scheduler::create_task() {
-    if (next_available_task_id >= MAX_TASKS) {
-        // cout << "Create_task FAILED: MAX_TASKS exceeded." << endl;
-        return -1; //return error
-    }
+    if (next_available_task_id >= MAX_TASKS) return -1;
 
     int id = next_available_task_id;
-    // cout << "Creating task #" << id << endl;
-
     tcb* new_task = &task_table[id];
     new_task->task_id = id;
     new_task->state = READY;
     new_task->next = nullptr;
 
-    // Build circular linked list
+    // Allocate mailbox semaphore immediately
+    new_task->mailbox_sema = new Semaphore(1, "Mailbox", this);
+
     if (current == nullptr) {
         current = new_task;
         tail = new_task;

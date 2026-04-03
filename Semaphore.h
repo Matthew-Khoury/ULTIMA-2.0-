@@ -7,9 +7,10 @@ Primary Author: Matthew Khoury*/
 #include <string>
 #include <pthread.h>
 #include "Queue.h"
-#include "Scheduler.h"
 
 using std::string;
+
+class scheduler; // forward declaration
 
 class Semaphore {
 private:
