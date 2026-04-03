@@ -10,26 +10,18 @@ Primary Author: Dylan Hurt*/
 // Initializes all window pointers and UI state
 ULTIMA::ULTIMA()
     : heading_win_(nullptr),
-    task_win_(nullptr),
-    sema_win_(nullptr),
-    log_win_(nullptr),
-    console_win_(nullptr),
-    mailbox_win_(nullptr),
-    running_(true),
-    paused_(false),
-    log_line_(1)
+      task_win_(nullptr),
+      sema_win_(nullptr),
+      mailbox_win_(nullptr),
+      log_win_(nullptr),
+      console_win_(nullptr),
+      mcb_(),
+      running_(true),
+      paused_(false),
+      log_line_(1),
+      selected_mailbox_(0),
+      selected_semaphore_(0)
 {
-    // Create tasks first
-    draw_log("Scheduler started.");
-    for (int i = 0; i < MAX_TASKS; i++) {
-
-        mcb_.Swapper.create_task();
-    }
-
-    mcb_.Swapper.start();
-
-    // Initialize IPC for the tasks
-    mcb_.InitIPC();
 }
 
 // Destructor
@@ -54,12 +46,12 @@ void ULTIMA::init_curses()
 
     refresh();
 
-    heading_win_ = create_window(6, 96, 1, 2);
-    task_win_    = create_window(12, 52, 8, 2);
-    sema_win_    = create_window(12, 52, 8, 56);
-    log_win_     = create_window(12, 72, 21, 2);
-    console_win_ = create_window(12, 34, 21, 75);
-    mailbox_win_ = create_window(6, 25, 1, 100);
+    heading_win_ = create_window(5, 106, 1, 2);
+    task_win_    = create_window(9, 52, 7, 2);
+    sema_win_    = create_window(9, 52, 7, 56);
+    mailbox_win_ = create_window(11, 106, 17, 2);
+    log_win_     = create_window(12, 72, 28, 2);
+    console_win_ = create_window(12, 34, 28, 75);
 
     draw_log("----- ULTIMA Log Started -----");
 }
@@ -82,6 +74,23 @@ WINDOW* ULTIMA::create_window(int height, int width, int y, int x)
     box(win, 0, 0);
     wrefresh(win);
     return win;
+}
+
+// initialize_scheduler()
+// Start the scheduler and create tasks
+void ULTIMA::initialize_scheduler()
+{
+    draw_log("Scheduler started.");
+
+    for (int i = 0; i < MAX_TASKS; i++)
+    {
+        mcb_.Swapper.create_task();
+    }
+
+    mcb_.Swapper.start();
+    mcb_.InitIPC();
+
+    draw_log("IPC initialized.");
 }
 
 // draw_heading()
@@ -109,8 +118,8 @@ void ULTIMA::draw_heading()
 
     mvwprintw(heading_win_, 1, 2, "ULTIMA Project");
     mvwprintw(heading_win_, 2, 2, "Current Task ID: %d", current_task_id);
-    mvwprintw(heading_win_, 3, 2, "Quantum: %ld", quantum);
-    mvwprintw(heading_win_, 4, 2, "Elapsed: %ld   Remaining: %ld", (long)elapsed, remaining);
+    mvwprintw(heading_win_, 3, 2, "Quantum: %ld   Elapsed: %ld   Remaining: %ld",
+              quantum, (long)elapsed, remaining);
 
     wrefresh(heading_win_);
 }
@@ -123,13 +132,13 @@ void ULTIMA::draw_tasks()
     box(task_win_, 0, 0);
 
     mvwprintw(task_win_, 1, 2, "Process Table Dump:");
-    mvwprintw(task_win_, 3, 2,
+    mvwprintw(task_win_, 2, 2,
               "%-12s %-8s %-10s %-8s",
               "TaskName", "TaskID", "State", "Etc.");
-    mvwprintw(task_win_, 4, 2,
+    mvwprintw(task_win_, 3, 2,
               "----------------------------------------------");
 
-    int line = 5;
+    int line = 4;
 
     // Loop over all tasks
     for (int i = 0; i < mcb_.Swapper.get_task_count(); i++)
@@ -164,6 +173,7 @@ void ULTIMA::draw_tasks()
         }
 
         if (!in_list) continue;
+        if (line >= 8) break;
 
         mvwprintw(task_win_, line, 2,
                   "%-12s %-8d %-10s %-8s",
@@ -183,13 +193,52 @@ void ULTIMA::draw_semaphore()
     werase(sema_win_);
     box(sema_win_, 0, 0);
 
+    Semaphore* current_sema = (selected_semaphore_ == 0) ? &mcb_.Monitor : &mcb_.Printer;
+
     mvwprintw(sema_win_, 1, 2, "Semaphore Dump:");
-    mvwprintw(sema_win_, 3, 2, "Resource: %s", mcb_.Monitor.get_resource_name().c_str());
-    mvwprintw(sema_win_, 4, 2, "Sema_value: %d", mcb_.Monitor.get_sema_value());
-    mvwprintw(sema_win_, 5, 2, "Sema_queue: %s", mcb_.Monitor.get_queue_string().c_str());
-    mvwprintw(sema_win_, 6, 2, "Lucky_task: %d", mcb_.Monitor.get_lucky_task());
+    mvwprintw(sema_win_, 2, 2, "Resource: %s", current_sema->get_resource_name().c_str());
+    mvwprintw(sema_win_, 3, 2, "Sema_value: %d", current_sema->get_sema_value());
+    mvwprintw(sema_win_, 4, 2, "Sema_queue: %s", current_sema->get_queue_string().c_str());
+    mvwprintw(sema_win_, 5, 2, "Lucky_task: %d", current_sema->get_lucky_task());
+    mvwprintw(sema_win_, 7, 2, "Press 't' to toggle resource.");
 
     wrefresh(sema_win_);
+}
+
+// draw_mailboxes()
+// Draws the mailbox dump
+void ULTIMA::draw_mailboxes()
+{
+    werase(mailbox_win_);
+    box(mailbox_win_, 0, 0);
+
+    int task_id = selected_mailbox_;
+    int message_count = mcb_.Messenger.Message_Count(task_id);
+
+    if (message_count < 0)
+    {
+        message_count = 0;
+    }
+
+    mvwprintw(mailbox_win_, 1, 2, "Mailbox Dump:");
+    mvwprintw(mailbox_win_, 2, 2, "Task Number: %d", task_id);
+    mvwprintw(mailbox_win_, 3, 2, "Message Count: %d", message_count);
+
+    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Message Content              Size  Type    Time");
+    mvwprintw(mailbox_win_, 6, 2, "--------------------------------------------------------------");
+
+    if (message_count == 0)
+    {
+        mvwprintw(mailbox_win_, 7, 2, "(empty)");
+    }
+	else
+	{
+    	mvwprintw(mailbox_win_, 7, 2, "(%d messages)", message_count);
+	}
+
+    mvwprintw(mailbox_win_, 9, 2, "Press 'm' to switch mailbox.");
+
+    wrefresh(mailbox_win_);
 }
 
 // draw_log()
@@ -206,7 +255,17 @@ void ULTIMA::draw_log(const std::string& line)
     {
         werase(log_win_);
         box(log_win_, 0, 0);
-        log_line_ = 1;
+        mvwprintw(log_win_, 1, 2, "Log:");
+        log_line_ = 2;
+    }
+
+    // Make sure header is always present
+    if (log_line_ == 1)
+    {
+        werase(log_win_);
+        box(log_win_, 0, 0);
+        mvwprintw(log_win_, 1, 2, "Log:");
+        log_line_ = 2;
     }
 
     mvwprintw(log_win_, log_line_, 2, "%s", line.c_str());
@@ -223,31 +282,17 @@ void ULTIMA::draw_console()
     box(console_win_, 0, 0);
 
     mvwprintw(console_win_, 1, 2, "Console Commands");
-    mvwprintw(console_win_, 3, 2, "p : Pause");
-    mvwprintw(console_win_, 4, 2, "r : Resume");
-    mvwprintw(console_win_, 5, 2, "d : Request resource");
-    mvwprintw(console_win_, 6, 2, "u : Release resource");
-    mvwprintw(console_win_, 7, 2, "k : Kill current task");
-    mvwprintw(console_win_, 8, 2, "g : Garbage collect");
-    mvwprintw(console_win_, 9, 2, "q : Quit");
+    mvwprintw(console_win_, 2, 2, "m : Next mailbox");
+    mvwprintw(console_win_, 3, 2, "t : Toggle semaphore");
+    mvwprintw(console_win_, 4, 2, "p : Pause");
+    mvwprintw(console_win_, 5, 2, "r : Resume");
+    mvwprintw(console_win_, 6, 2, "d : Request resource");
+    mvwprintw(console_win_, 7, 2, "u : Release resource");
+    mvwprintw(console_win_, 8, 2, "k : Kill current task");
+    mvwprintw(console_win_, 9, 2, "g : Garbage Collect");
+    mvwprintw(console_win_, 10, 2, "q : Quit");
 
     wrefresh(console_win_);
-}
-// Draws mailbox window
-void ULTIMA::draw_mailbox()
-{
-    werase(mailbox_win_);
-    box(mailbox_win_, 0, 0);
-
-    mvwprintw(mailbox_win_, 1, 2, "Mailbox Dump:");
-
-    for (int i = 0; i < MAX_TASKS; i++)
-    {
-        mvwprintw(mailbox_win_, 2+i, 2, "Task %d: %s", i,
-                  mcb_.Messenger.Message_Count(i) > 0 ? "Has messages" : "Empty");
-    }
-
-    wrefresh(mailbox_win_);
 }
 
 // draw_all()
@@ -257,8 +302,16 @@ void ULTIMA::draw_all()
     draw_heading();
     draw_tasks();
     draw_semaphore();
+    draw_mailboxes();
     draw_console();
-    draw_mailbox();
+
+    // Keep log box visible even when no new message arrives
+    if (log_win_ != nullptr)
+    {
+        box(log_win_, 0, 0);
+        mvwprintw(log_win_, 1, 2, "Log:");
+        wrefresh(log_win_);
+    }
 }
 
 void ULTIMA::waste_time(int factor)
@@ -276,6 +329,20 @@ void ULTIMA::handle_input(int ch)
 {
     switch (ch)
     {
+        case 'm':
+            selected_mailbox_++;
+            if (selected_mailbox_ >= mcb_.Swapper.get_task_count())
+                selected_mailbox_ = 0;
+            draw_log("Switched mailbox view.");
+            break;
+
+        case 't':
+            selected_semaphore_++;
+            if (selected_semaphore_ > 1)
+                selected_semaphore_ = 0;
+            draw_log("Toggled semaphore view.");
+            break;
+
         case 'p':
             paused_ = true;
             draw_log("System paused.");
@@ -287,25 +354,32 @@ void ULTIMA::handle_input(int ch)
             break;
 
         case 'd':
+        {
+            Semaphore* current_sema = (selected_semaphore_ == 0) ? &mcb_.Monitor : &mcb_.Printer;
             draw_log("Semaphore down requested.");
-            mcb_.Monitor.down(mcb_.Swapper.get_task_id());
+            current_sema->down(mcb_.Swapper.get_task_id());
             break;
+        }
 
         case 'u':
+        {
+            Semaphore* current_sema = (selected_semaphore_ == 0) ? &mcb_.Monitor : &mcb_.Printer;
             draw_log("Semaphore up requested.");
-            mcb_.Monitor.up();
+            current_sema->up();
             break;
+        }
 
         case 'k':
         {
             int current_task = mcb_.Swapper.get_task_id();
+            Semaphore* current_sema = (selected_semaphore_ == 0) ? &mcb_.Monitor : &mcb_.Printer;
 
             draw_log("Kill task requested.");
 
-            if (mcb_.Monitor.get_lucky_task() == current_task)
+            if (current_sema->get_lucky_task() == current_task)
             {
                 draw_log("Current task owns resource. Releasing resource first.");
-                mcb_.Monitor.up();
+                current_sema->up();
             }
 
             mcb_.Swapper.kill();
@@ -337,6 +411,7 @@ void ULTIMA::handle_input(int ch)
 void ULTIMA::run()
 {
     init_curses();
+    initialize_scheduler();
     draw_all();
     draw_log("Ready for input.");
 

@@ -5,8 +5,6 @@ Primary Author: Dylan Hurt*/
 
 #include <string>
 #include <ncurses.h>
-#include "Scheduler.h"
-#include "Semaphore.h"
 #include "MCB.h"
 
 class ULTIMA
@@ -32,15 +30,18 @@ private:
 
     // log window tracking
     int log_line_;
+    int selected_mailbox_;
+    int selected_semaphore_;
 
     void init_curses();
     void shutdown_curses();
     WINDOW* create_window(int height, int width, int y, int x);
 
+    void initialize_scheduler();
     void draw_tasks();
     void draw_semaphore();
     void draw_heading();
-    void draw_mailbox();
+    void draw_mailboxes();
 
     void draw_log(const std::string& line);
     void draw_console();
