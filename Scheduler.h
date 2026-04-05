@@ -9,6 +9,7 @@
 
 #include <iostream>
 #include <string>
+#include <cstdint>
 #include "Queue.h"
 
 using namespace std;
@@ -28,7 +29,7 @@ struct tcb {
     tcb* next;
 
     // add mailbox pointer
-    Queue<int> mailbox;          // queue of message IDs (or pointers)
+    Queue<intptr_t> mailbox;
 
     Semaphore* mailbox_sema = nullptr;
 };

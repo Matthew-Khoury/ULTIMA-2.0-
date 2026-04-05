@@ -16,6 +16,7 @@ public:
 
     void En_Q(TYPE value);
     TYPE De_Q();
+    TYPE Peek(int index);
     bool isEmpty();
     void Print();
     std::string Get_Q_String();
@@ -66,6 +67,14 @@ TYPE Queue<TYPE>::De_Q() {
     front = (front + 1) % capacity;  // move the front index forward
     count--;                         // decrement element count by 1
     return value;                    // return the removed element
+}
+
+template <class TYPE>
+TYPE Queue<TYPE>::Peek(int index) {
+    if (index < 0 || index >= count) {
+        throw std::runtime_error("Queue index out of range");
+    }
+    return data[(front + index) % capacity];
 }
 
 template <class TYPE>

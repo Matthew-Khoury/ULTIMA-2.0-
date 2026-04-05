@@ -3,6 +3,8 @@ Primary Author: Dylan Hurt*/
 #include "Ultima.h"
 
 #include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <string>
 #include <unistd.h>
 
@@ -49,9 +51,13 @@ void ULTIMA::init_curses()
     heading_win_ = create_window(5, 106, 1, 2);
     task_win_    = create_window(9, 52, 7, 2);
     sema_win_    = create_window(9, 52, 7, 56);
-    mailbox_win_ = create_window(11, 106, 17, 2);
-    log_win_     = create_window(12, 72, 28, 2);
-    console_win_ = create_window(12, 34, 28, 75);
+
+    // taller mailbox window
+    mailbox_win_ = create_window(15, 106, 17, 2);
+
+    // move log and console down and make them taller
+    log_win_     = create_window(14, 72, 32, 2);
+    console_win_ = create_window(14, 34, 32, 75);
 
     draw_log("----- ULTIMA Log Started -----");
 }
@@ -213,6 +219,35 @@ void ULTIMA::draw_mailboxes()
     box(mailbox_win_, 0, 0);
 
     int task_id = selected_mailbox_;
+
+    bool in_list = false;
+    tcb* node = mcb_.Swapper.get_current();
+    if (node)
+    {
+        tcb* start = node;
+        do
+        {
+            if (node->task_id == task_id)
+            {
+                in_list = true;
+                break;
+            }
+            node = node->next;
+        } while (node != start);
+    }
+
+    mvwprintw(mailbox_win_, 1, 2, "Mailbox Dump:");
+    mvwprintw(mailbox_win_, 2, 2, "Task Number: %d", task_id);
+
+    if (!in_list)
+    {
+        mvwprintw(mailbox_win_, 3, 2, "Message Count: 0");
+        mvwprintw(mailbox_win_, 5, 2, "(mailbox no longer exists)");
+        mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send  x:recv");
+        wrefresh(mailbox_win_);
+        return;
+    }
+
     int message_count = mcb_.Messenger.Message_Count(task_id);
 
     if (message_count < 0)
@@ -220,23 +255,48 @@ void ULTIMA::draw_mailboxes()
         message_count = 0;
     }
 
-    mvwprintw(mailbox_win_, 1, 2, "Mailbox Dump:");
-    mvwprintw(mailbox_win_, 2, 2, "Task Number: %d", task_id);
     mvwprintw(mailbox_win_, 3, 2, "Message Count: %d", message_count);
 
-    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Message Content              Size  Type    Time");
-    mvwprintw(mailbox_win_, 6, 2, "--------------------------------------------------------------");
+    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Message                            Size   Type            Time");
+    mvwprintw(mailbox_win_, 6, 2, "--------------------------------------------------------------------------------");
 
     if (message_count == 0)
     {
         mvwprintw(mailbox_win_, 7, 2, "(empty)");
     }
-	else
-	{
-    	mvwprintw(mailbox_win_, 7, 2, "(%d messages)", message_count);
-	}
+    else
+    {
+        tcb* task = mcb_.Swapper.get_task(task_id);
 
-    mvwprintw(mailbox_win_, 9, 2, "Press 'm' to switch mailbox.");
+        if (task != nullptr)
+        {
+            int row = 7;
+
+            for (int i = 0; i < task->mailbox.Size() && row <= 12; i++)
+            {
+                ipc::Message* msg = (ipc::Message*)(intptr_t)task->mailbox.Peek(i);
+
+                if (msg != nullptr)
+                {
+                    char time_buffer[16];
+                    struct tm* tm_info = localtime(&msg->Message_Arrival_Time);
+                    strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
+
+                    mvwprintw(mailbox_win_, row, 2,
+                              "%-4d %-4d %-34.34s %-6d %-15.15s %-10s",
+                              msg->Source_Task_Id,
+                              msg->Destination_Task_Id,
+                              msg->Msg_Text,
+                              msg->Msg_Size,
+                              msg->Msg_Type.Message_Type_Description,
+                              time_buffer);
+                    row++;
+                }
+            }
+        }
+    }
+
+    mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send  x:receive");
 
     wrefresh(mailbox_win_);
 }
@@ -284,13 +344,13 @@ void ULTIMA::draw_console()
     mvwprintw(console_win_, 1, 2, "Console Commands");
     mvwprintw(console_win_, 2, 2, "m : Next mailbox");
     mvwprintw(console_win_, 3, 2, "t : Toggle semaphore");
-    mvwprintw(console_win_, 4, 2, "p : Pause");
-    mvwprintw(console_win_, 5, 2, "r : Resume");
-    mvwprintw(console_win_, 6, 2, "d : Request resource");
-    mvwprintw(console_win_, 7, 2, "u : Release resource");
-    mvwprintw(console_win_, 8, 2, "k : Kill current task");
-    mvwprintw(console_win_, 9, 2, "g : Garbage Collect");
-    mvwprintw(console_win_, 10, 2, "q : Quit");
+    mvwprintw(console_win_, 4, 2, "s : Send text message ");
+    mvwprintw(console_win_, 5, 2, "v : Send service message");
+    mvwprintw(console_win_, 6, 2, "n : Send notify message");
+    mvwprintw(console_win_, 7, 2, "x : Receive message ");
+    mvwprintw(console_win_, 8, 2, "p/r : Pause / Resume");
+    mvwprintw(console_win_, 9, 2, "d/u : Down / Up");
+    mvwprintw(console_win_, 10, 2, "k/g/q : Kill / GC / Quit");
 
     wrefresh(console_win_);
 }
@@ -330,11 +390,38 @@ void ULTIMA::handle_input(int ch)
     switch (ch)
     {
         case 'm':
-            selected_mailbox_++;
-            if (selected_mailbox_ >= mcb_.Swapper.get_task_count())
-                selected_mailbox_ = 0;
+        {
+            int start = selected_mailbox_;
+            bool found = false;
+
+            do
+            {
+                selected_mailbox_++;
+                if (selected_mailbox_ >= mcb_.Swapper.get_task_count())
+                    selected_mailbox_ = 0;
+
+                tcb* node = mcb_.Swapper.get_current();
+                if (node)
+                {
+                    tcb* first = node;
+                    do
+                    {
+                        if (node->task_id == selected_mailbox_)
+                        {
+                            found = true;
+                            break;
+                        }
+                        node = node->next;
+                    } while (node != first);
+                }
+
+                if (found) break;
+
+            } while (selected_mailbox_ != start);
+
             draw_log("Switched mailbox view.");
             break;
+        }
 
         case 't':
             selected_semaphore_++;
@@ -342,6 +429,126 @@ void ULTIMA::handle_input(int ch)
                 selected_semaphore_ = 0;
             draw_log("Toggled semaphore view.");
             break;
+
+        case 's':
+        {
+            int source_task = mcb_.Swapper.get_task_id();
+            int dest_task = selected_mailbox_;
+
+            if (source_task == dest_task)
+            {
+                draw_log("Task cannot send a message to itself.");
+                break;
+            }
+
+            ipc::Message* msg = new ipc::Message;
+            msg->Source_Task_Id = source_task;
+            msg->Destination_Task_Id = dest_task;
+            msg->Msg_Type.Message_Type_Id = 0;
+            snprintf(msg->Msg_Text, MAX_MSG_SIZE,
+                     "Message from task %d to task %d.",
+                     source_task, dest_task);
+
+            if (mcb_.Messenger.Message_Send(msg) == 1)
+                draw_log("Text message sent.");
+            else
+            {
+                delete msg;
+                draw_log("Message send failed.");
+            }
+            break;
+        }
+
+        case 'v':
+        {
+            int source_task = mcb_.Swapper.get_task_id();
+            int dest_task = selected_mailbox_;
+
+            if (source_task == dest_task)
+            {
+                draw_log("Task cannot send a message to itself.");
+                break;
+            }
+
+            ipc::Message* msg = new ipc::Message;
+            msg->Source_Task_Id = source_task;
+            msg->Destination_Task_Id = dest_task;
+            msg->Msg_Type.Message_Type_Id = 1;
+            strncpy(msg->Msg_Text, "lpr file1", MAX_MSG_SIZE - 1);
+            msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+
+            if (mcb_.Messenger.Message_Send(msg) == 1)
+                draw_log("Service message sent.");
+            else
+            {
+                delete msg;
+                draw_log("Message send failed.");
+            }
+            break;
+        }
+
+        case 'n':
+        {
+            int source_task = mcb_.Swapper.get_task_id();
+            int dest_task = selected_mailbox_;
+
+            if (source_task == dest_task)
+            {
+                draw_log("Task cannot send a message to itself.");
+                break;
+            }
+
+            ipc::Message* msg = new ipc::Message;
+            msg->Source_Task_Id = source_task;
+            msg->Destination_Task_Id = dest_task;
+            msg->Msg_Type.Message_Type_Id = 2;
+            strncpy(msg->Msg_Text, "Got your print service request", MAX_MSG_SIZE - 1);
+            msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+
+            if (mcb_.Messenger.Message_Send(msg) == 1)
+                draw_log("Notification sent.");
+            else
+            {
+                delete msg;
+                draw_log("Message send failed.");
+            }
+            break;
+        }
+
+        case 'x':
+        {
+            int running_task = mcb_.Swapper.get_task_id();
+            int receive_task = selected_mailbox_;
+
+            if (receive_task != running_task)
+            {
+                draw_log("Selected mailbox must belong to running task.");
+                break;
+            }
+
+            ipc::Message received_msg;
+
+            int result = mcb_.Messenger.Message_Receive(receive_task, &received_msg);
+
+            if (result == 1)
+            {
+                char log_buffer[128];
+                snprintf(log_buffer, sizeof(log_buffer),
+                         "Task %d received: %s",
+                         receive_task,
+                         received_msg.Msg_Text);
+                draw_log(log_buffer);
+            }
+            else if (result == 0)
+            {
+                draw_log("No message to receive.");
+            }
+            else
+            {
+                draw_log("Message receive failed.");
+            }
+            break;
+        }
 
         case 'p':
             paused_ = true;
@@ -388,10 +595,26 @@ void ULTIMA::handle_input(int ch)
         }
 
         case 'g':
+        {
             draw_log("Garbage collection requested.");
+
+            for (int i = 0; i < mcb_.Swapper.get_task_count(); i++)
+            {
+                if (mcb_.Swapper.get_state(i) == DEAD)
+                {
+                    mcb_.Messenger.Message_DeleteAll(i);
+                }
+            }
+
             mcb_.Swapper.garbage();
+
+            selected_mailbox_ = mcb_.Swapper.get_task_id();
+            if (selected_mailbox_ < 0)
+                selected_mailbox_ = 0;
+
             draw_log("Garbage collection complete.");
             break;
+        }
 
         case 'q':
             running_ = false;
@@ -424,7 +647,6 @@ void ULTIMA::run()
             handle_input(ch);
         }
 
-        // Free-flowing execution while not paused
         if (!paused_)
         {
             waste_time(10);
@@ -433,7 +655,6 @@ void ULTIMA::run()
 
         draw_all();
 
-        // Slow the loop so the UI is readable
         usleep(150000);
     }
 }

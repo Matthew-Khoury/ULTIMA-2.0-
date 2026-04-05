@@ -45,8 +45,8 @@ public:
 	int Message_Send(int source_id, int dest_id, char* text, int type);
 
 	int Message_Receive(int task_id, Message *msg);// returns 0 if no more messages are available, loads the Message
-												   // structure with the first message from the mailbox and remove the
-												   // message from the mailbox. Return -1 if an error occurs.
+	// structure with the first message from the mailbox and remove the
+	// message from the mailbox. Return -1 if an error occurs.
 
 	// Overloaded receive
 	int Message_Receive(int task_id, char* text, int* type);
@@ -60,7 +60,7 @@ public:
 	int Message_DeleteAll(int task_id); // delete all the messages for Task_id, from the queue.
 
 	void ipc_Message_Dump();			// print all the messages in the message queue, but do not delete them from the queue.
-										// (print the messages for each task’s message queue)
+	// (print the messages for each task’s message queue)
 };
 
 #endif

@@ -195,47 +195,44 @@ void scheduler::dump() {
 void scheduler:: kill(){
     if(!current)return;
     current->state = DEAD;
-    yield(); // proceed to the next task 
+    yield(); // proceed to the next task
 }
 
 void scheduler::garbage() {
     if (!current) return;
 
-    bool foundDead = true;
+    tcb* first_alive = nullptr;
+    tcb* last_alive = nullptr;
 
-    while (foundDead && current != nullptr) {
-        foundDead = false;
+    tcb* start = current;
+    tcb* node = current;
 
-        tcb* prev = tail;
-        tcb* curr = current;
+    do {
+        tcb* next_node = node->next;
 
-        do {
-            if (curr->state == DEAD) {
-
-                // Only one node in the list
-                if (curr == curr->next) {
-                    current = nullptr;
-                    tail = nullptr;
-                    return;
-                }
-
-                prev->next = curr->next;
-
-                if (curr == tail)
-                    tail = prev;
-
-                if (curr == current)
-                    current = curr->next;
-
-                foundDead = true;
-                break; //restart traversal after deletion
+        if (node->state != DEAD) {
+            if (first_alive == nullptr) {
+                first_alive = node;
+                last_alive = node;
             }
+            else {
+                last_alive->next = node;
+                last_alive = node;
+            }
+        }
 
-            prev = curr;
-            curr = curr->next;
+        node = next_node;
+    } while (node != start);
 
-        } while (curr != current);
+    if (first_alive == nullptr) {
+        current = nullptr;
+        tail = nullptr;
+        return;
     }
+
+    last_alive->next = first_alive;
+    current = first_alive;
+    tail = last_alive;
 }
 
 tcb* scheduler::get_current() {
