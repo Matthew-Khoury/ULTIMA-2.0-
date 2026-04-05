@@ -1,5 +1,6 @@
 /* Code Framework built from Lab 6
-Primary Author: Dylan Hurt*/
+Primary Author: Dylan Hurt
+*/
 #include "Ultima.h"
 
 #include <cstdio>
@@ -243,7 +244,7 @@ void ULTIMA::draw_mailboxes()
     {
         mvwprintw(mailbox_win_, 3, 2, "Message Count: 0");
         mvwprintw(mailbox_win_, 5, 2, "(mailbox no longer exists)");
-        mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send  x:recv");
+        mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send");
         wrefresh(mailbox_win_);
         return;
     }
@@ -296,7 +297,7 @@ void ULTIMA::draw_mailboxes()
         }
     }
 
-    mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send  x:receive");
+    mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send");
 
     wrefresh(mailbox_win_);
 }
@@ -347,10 +348,9 @@ void ULTIMA::draw_console()
     mvwprintw(console_win_, 4, 2, "s : Send text message ");
     mvwprintw(console_win_, 5, 2, "v : Send service message");
     mvwprintw(console_win_, 6, 2, "n : Send notify message");
-    mvwprintw(console_win_, 7, 2, "x : Receive message ");
-    mvwprintw(console_win_, 8, 2, "p/r : Pause / Resume");
-    mvwprintw(console_win_, 9, 2, "d/u : Down / Up");
-    mvwprintw(console_win_, 10, 2, "k/g/q : Kill / GC / Quit");
+    mvwprintw(console_win_, 7, 2, "p/r : Pause / Resume");
+    mvwprintw(console_win_, 8, 2, "d/u : Down / Up");
+    mvwprintw(console_win_, 9, 2, "k/g/q : Kill / GC / Quit");
 
     wrefresh(console_win_);
 }
@@ -454,7 +454,7 @@ void ULTIMA::handle_input(int ch)
             else
             {
                 delete msg;
-                draw_log("Message send failed.");
+                draw_log("Mailbox full. Message failed to send.");
             }
             break;
         }
@@ -482,7 +482,7 @@ void ULTIMA::handle_input(int ch)
             else
             {
                 delete msg;
-                draw_log("Message send failed.");
+                draw_log("Mailbox full. Message failed to send.");
             }
             break;
         }
@@ -510,42 +510,7 @@ void ULTIMA::handle_input(int ch)
             else
             {
                 delete msg;
-                draw_log("Message send failed.");
-            }
-            break;
-        }
-
-        case 'x':
-        {
-            int running_task = mcb_.Swapper.get_task_id();
-            int receive_task = selected_mailbox_;
-
-            if (receive_task != running_task)
-            {
-                draw_log("Selected mailbox must belong to running task.");
-                break;
-            }
-
-            ipc::Message received_msg;
-
-            int result = mcb_.Messenger.Message_Receive(receive_task, &received_msg);
-
-            if (result == 1)
-            {
-                char log_buffer[128];
-                snprintf(log_buffer, sizeof(log_buffer),
-                         "Task %d received: %s",
-                         receive_task,
-                         received_msg.Msg_Text);
-                draw_log(log_buffer);
-            }
-            else if (result == 0)
-            {
-                draw_log("No message to receive.");
-            }
-            else
-            {
-                draw_log("Message receive failed.");
+                draw_log("Mailbox full. Message failed to send.");
             }
             break;
         }
@@ -651,6 +616,24 @@ void ULTIMA::run()
         {
             waste_time(10);
             mcb_.Swapper.yield();
+
+            int running_task = mcb_.Swapper.get_task_id();
+
+            if (running_task >= 0)
+            {
+                ipc::Message received_msg;
+                int result = mcb_.Messenger.Message_Receive(running_task, &received_msg);
+
+                if (result == 1)
+                {
+                    char log_buffer[160];
+                    snprintf(log_buffer, sizeof(log_buffer),
+                             "Task %d received: %s",
+                             running_task,
+                             received_msg.Msg_Text);
+                    draw_log(log_buffer);
+                }
+            }
         }
 
         draw_all();

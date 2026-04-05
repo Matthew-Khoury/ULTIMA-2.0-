@@ -65,7 +65,12 @@ int ipc::Message_Send(Message* msg) {
     msg->Msg_Size = strlen(msg->Msg_Text);
 
     // Enqueue the message
-    dest_task->mailbox.En_Q((intptr_t)msg);
+    try {
+        dest_task->mailbox.En_Q((intptr_t)msg);
+    }
+    catch (const std::runtime_error&) {
+        return -1;
+    }
 
     return 1;
 }
