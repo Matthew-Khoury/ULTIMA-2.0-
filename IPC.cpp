@@ -18,6 +18,7 @@ int ipc::Init(int max_tasks_, scheduler* scheduler) {
 
     // Initialize mailbox semaphores
     for (int i = 0; i < max_tasks; i++) {
+
         tcb* task = sched_ptr->get_task(i);  // always valid for 0 <= i < MAX_TASKS
 
         if (task == nullptr) continue;
@@ -38,14 +39,16 @@ int ipc::Message_Send(Message* msg) {
     if (!msg) return -1;
     if (sched_ptr == nullptr) return -1;
 
+
     tcb* dest_task = sched_ptr->get_task(msg->Destination_Task_Id);
 
     // Only check mailbox_sema
-    if (dest_task == nullptr || !dest_task->mailbox_sema) return -1;
+    if (dest_task == nullptr || !dest_task->mailbox_sema || dest_task->state == DEAD) return -1;
 
     // Fill in arrival time
     if (msg->Message_Arrival_Time == 0)
         msg->Message_Arrival_Time = time(nullptr);
+        
 
     // Fill in message type description
     if (msg->Msg_Type.Message_Type_Id == 0) {
