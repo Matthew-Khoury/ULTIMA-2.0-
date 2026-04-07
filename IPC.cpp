@@ -38,6 +38,7 @@ int ipc::Init(int max_tasks_, scheduler* scheduler) {
 int ipc::Message_Send(Message* msg) {
     if (!msg) return -1;
     if (sched_ptr == nullptr) return -1;
+    if(sched_ptr->get_state(msg->Destination_Task_Id) != DEAD) return -1;
 
 
     tcb* dest_task = sched_ptr->get_task(msg->Destination_Task_Id);
