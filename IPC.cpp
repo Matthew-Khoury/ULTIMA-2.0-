@@ -47,8 +47,7 @@ int ipc::Message_Send(Message* msg) {
     if (dest_task == nullptr || !dest_task->mailbox_sema || dest_task->state == DEAD) return -1;
 
     // Fill in arrival time
-    if (msg->Message_Arrival_Time == 0)
-        msg->Message_Arrival_Time = time(nullptr);
+     msg->Message_Arrival_Time = time(nullptr);
         
 
     // Fill in message type description
