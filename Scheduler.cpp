@@ -23,6 +23,7 @@ scheduler::scheduler() {
         task_table[i].mailbox_sema = nullptr;
     }
 }
+//this is a practice change
 
 scheduler::~scheduler() {
     // Delete mailbox semaphores
