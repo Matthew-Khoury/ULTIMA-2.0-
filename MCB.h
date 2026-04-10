@@ -1,3 +1,5 @@
+//Created by Matthew Khoury
+
 #ifndef MCB_H
 #define MCB_H
 

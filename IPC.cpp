@@ -1,5 +1,5 @@
 // Primary Author: Matthew Khoury
-// Co-contributor Dylan Hurt
+// Co-contributor Dylan Hurt & Melanie Priestly 
 
 #include "IPC.h"
 #include <cstring>
