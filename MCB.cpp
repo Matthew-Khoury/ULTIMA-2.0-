@@ -4,8 +4,10 @@
 
 // Constructor
 MCB::MCB()
-	: Monitor(1, "Monitor", &Swapper),   // assign scheduler pointer
-	  Printer(1, "Printer", &Swapper)    // assign scheduler pointer
+	: MemMgr(1024, '.', 128),            // memory manager
+	  Monitor(1, "Monitor", &Swapper),   // assign scheduler pointer
+	  Printer(1, "Printer", &Swapper),   // assign scheduler pointer
+	  Core(1, "Core Memory", &Swapper)   // core memory semaphore
 {
 	// At this point, scheduler is constructed, tasks may not exist yet
 }
