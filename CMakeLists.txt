@@ -1,4 +1,4 @@
-#Primary Author Mattew Khoury
+#Primary Author Matthew Khoury
 
 cmake_minimum_required(VERSION 4.1)
 project(ULTIMA_2_0_)
@@ -19,7 +19,12 @@ add_executable(ULTIMA_2_0_
         Semaphore.cpp
         Scheduler.cpp
         Scheduler.h
-        Queue.h)
+        Queue.h
+        IPC.cpp
+        IPC.h
+        MCB.cpp
+        MCB.h
+        MCB.cpp)
 
 # 4. Link the ncurses library
 target_link_libraries(ULTIMA_2_0_ ${CURSES_LIBRARIES})
