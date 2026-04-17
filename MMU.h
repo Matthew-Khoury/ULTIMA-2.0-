@@ -19,6 +19,10 @@ public:
 
     int Mem_Alloc(int size);
     int Mem_Free(int memory_handle);
+    int Mem_Read(int memory_handle, char * ch);
+    int Mem_Write(int memory_handle, char * ch);
+    int Mem_Read(int memory_handle, int offset_from_beg, int text_size, char *text);
+    int Mem_Write(int memory_handle, int offset_from_beg, int text_size, char *text);
 
     unsigned char* get_memory() const { return memory_; }
 
