@@ -21,6 +21,11 @@ public:
     int Mem_Free(int memory_handle);
 
     unsigned char* get_memory() const { return memory_; }
+
+    int Mem_Left();      // return the amount of core memory left in the OS
+    int Mem_Largest();   // return the size of the largest available memory segment
+    int Mem_Smallest();  // return the size of the smallest available memory segment
+    int Mem_Coalesce();  // combine two or more contiguous blocks of free space, and place '.' (dots) in the coalesced memory
 };
 
 #endif

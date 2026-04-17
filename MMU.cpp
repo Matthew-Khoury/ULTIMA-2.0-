@@ -93,6 +93,96 @@ int mmu::Mem_Free(int memory_handle)
                 memory_[j] = '#';
         }
     }
+    // if not found then return -1
+    if (!found) return -1;
 
-    return found ? 0 : -1;
+    //free memory is found -> Mem_Coalesce()
+    Mem_Coalesce();
+    return 0;
+}
+
+// return the amount of core memory left in the OS
+int mmu::Mem_Left()
+{
+    int free_blocks = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0) // available (free) block
+            free_blocks++;
+    }
+
+    return free_blocks * page_size_;  // free_blocks * page_size_ = total memory left available
+}
+
+// return the size of the largest available memory segment (block)
+int mmu::Mem_Largest()
+{
+    int max_blocks = 0;
+    int current_blocks = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0) // available (free) block
+        {
+            current_blocks++;
+            if (current_blocks > max_blocks)
+                max_blocks = current_blocks;
+        }
+        else
+        {
+            current_blocks = 0;
+        }
+    }
+    return max_blocks * page_size_;  // max_blocks * page_size = size of largest available memory block
+}
+
+// return the size of the smallest available memory segment
+int mmu::Mem_Smallest()
+{
+    int min_blocks = total_blocks_ +1;
+    int current_blocks = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0) // available (free) block
+        {
+            current_blocks++;
+        }
+        else
+        {
+            if (current_blocks > 0 && current_blocks < min_blocks)
+                min_blocks = current_blocks;
+            current_blocks = 0;
+        }
+    }
+
+    if (current_blocks > 0 && current_blocks < min_blocks)
+        return 0;  // no free memory available
+    return min_blocks * page_size_;  // min_blocks * page_size = size of smallest available memory block
+}
+
+// combine two or more contiguous blocks of free space, and place '.' (dots) in the coalesced memory
+int mmu::Mem_Coalesce()
+{
+    int total_bytes = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0) // available (free) block
+        {
+            int start = i * page_size_;
+            int end = start + page_size_;
+
+            for (int j = start; j < end; j++)
+            {
+                if (memory_[j] != '.') // avoid recounting
+                {
+                    memory_[j] = '.';
+                    total_bytes++;
+                }
+            }
+        }
+    }
+    return total_bytes;
 }
