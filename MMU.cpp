@@ -1,4 +1,8 @@
 #include "MMU.h"
+#include <iostream>
+#include <iomanip>
+
+using namespace std;
 
 // Constructor
 mmu::mmu(int size, char default_initial_value, int page_size)
@@ -276,4 +280,77 @@ int mmu :: Mem_Write(int memory_handle, int offset_from_beg, int text_size, char
         }
     }
     return -1; // handle not found
+}
+
+// Dump the contents of the memory (typically we dump the entire memory)
+// TODO: Test and debug: this might have issues when page_size != 16
+void mmu::mmu_Mem_Dump()
+{
+    cout << "Addr    HEX BYTES                                 | ASCII" << endl;
+    cout << "-------------------------------------------------------------" << endl;
+
+    const int bytes_per_line = 16; // TODO: this is a possible problem
+
+    for (int i = 0; i < memory_size_; i += bytes_per_line)
+    {
+        // Memory address
+        cout << setw(6) << setfill('0') << hex << i << "  ";
+
+        // Hex dump with page boundaries
+        for (int j = 0; j < bytes_per_line; j++)
+        {
+            int current_index = i + j;
+
+            if (current_index < memory_size_)
+            {
+                // Insert page boundary (skip at start)
+                if (j != 0 && current_index % page_size_ == 0)
+                {
+                    cout << "| ";
+                }
+
+                cout << setw(2) << setfill('0')
+                     << hex << (int)memory_[current_index] << " ";
+            }
+            else
+            {
+                cout << "   ";
+            }
+        }
+
+        // Separator between Hex and ASCII
+        cout << "| ";
+
+        // ASCII dump with page boundaries
+        for (int j = 0; j < bytes_per_line; j++)
+        {
+            int current_index = i + j;
+
+            if (current_index < memory_size_)
+            {
+                if (j != 0 && current_index % page_size_ == 0)
+                {
+                    cout << "|";
+                }
+
+                unsigned char c = memory_[current_index];
+                cout << (isprint(c) ? (char)c : '.');
+            }
+        }
+
+        cout << endl;
+
+        // Block and handle information
+        if ((i % page_size_) == 0)
+        {
+            int block_index = i / page_size_;
+            cout << "        [Block " << dec << block_index
+                 << " | Handle: " << handle_table_[block_index] << "]"
+                 << endl;
+        }
+    }
+    cout << "===================================================" << endl;
+
+    // Reset the formatting
+    cout << dec << setfill(' ');
 }
