@@ -27,6 +27,7 @@ struct tcb {
     string state;
     clock_t start_time;
     tcb* next;
+    handle[] listofhandles
 
     // add mailbox pointer
     Queue<intptr_t> mailbox;

@@ -274,6 +274,7 @@ void ULTIMA::draw_mailboxes()
 }
 
 // helper
+// TODO: this is a potential bug that needs fixed for displaying the current_location and taskID of the allocated block of memory
 int ULTIMA::find_task_for_handle(int handle) const
 {
     if (handle <= 0) return -1;
@@ -648,13 +649,15 @@ void ULTIMA::handle_input(int ch)
             if (current_task < 0)
                 break;
 
-            if (task_memory_handle_[current_task] >= 0)
-            {
-                draw_log("Current task already owns a memory handle.");
-                break;
-            }
+            // /*
+            // if (task_memory_handle_[current_task] >= 0)
+            // {
+            //     draw_log("Current task already owns a memory handle.");
+            //     break;
+            // } commented out for testing
+            // */
 
-            int request_size = 128;
+            int request_size = 64; // TODO: test changing this value
             int handle = mcb_.MemMgr.Mem_Alloc(request_size);
 
             if (handle < 0)
