@@ -20,6 +20,8 @@ private:
     WINDOW* task_win_;
     WINDOW* sema_win_;
     WINDOW* mailbox_win_;
+    WINDOW* memory_usage_win_;
+    WINDOW* core_dump_win_;
     WINDOW* log_win_;
     WINDOW* console_win_;
 
@@ -28,10 +30,14 @@ private:
     bool running_;
     bool paused_;
 
-    // log window tracking
     int log_line_;
     int selected_mailbox_;
     int selected_semaphore_;
+
+    int  task_memory_handle_[MAX_TASKS];
+    int  task_memory_request_size_[MAX_TASKS];
+    int  task_memory_cursor_[MAX_TASKS];
+    bool show_core_dump_;
 
     void init_curses();
     void shutdown_curses();
@@ -42,6 +48,8 @@ private:
     void draw_semaphore();
     void draw_heading();
     void draw_mailboxes();
+    void draw_memory_usage();
+    void draw_core_dump();
 
     void draw_log(const std::string& line);
     void draw_console();
@@ -49,6 +57,9 @@ private:
 
     void handle_input(int ch);
     void waste_time(int factor);
+
+    int find_task_for_handle(int handle) const;
+    int active_memory_handle_count() const;
 };
 
 #endif

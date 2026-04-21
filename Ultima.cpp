@@ -1,5 +1,6 @@
 /* Code Framework built from Lab 6
 Primary Author: Dylan Hurt
+Memory window integration update.
 */
 #include "Ultima.h"
 
@@ -10,12 +11,13 @@ Primary Author: Dylan Hurt
 #include <unistd.h>
 
 // ULTIMA Constructor
-// Initializes all window pointers and UI state
 ULTIMA::ULTIMA()
     : heading_win_(nullptr),
       task_win_(nullptr),
       sema_win_(nullptr),
       mailbox_win_(nullptr),
+      memory_usage_win_(nullptr),
+      core_dump_win_(nullptr),
       log_win_(nullptr),
       console_win_(nullptr),
       mcb_(),
@@ -23,19 +25,24 @@ ULTIMA::ULTIMA()
       paused_(false),
       log_line_(1),
       selected_mailbox_(0),
-      selected_semaphore_(0)
+      selected_semaphore_(0),
+      show_core_dump_(true)
 {
+    for (int i = 0; i < MAX_TASKS; i++)
+    {
+        task_memory_handle_[i] = -1;
+        task_memory_request_size_[i] = 0;
+        task_memory_cursor_[i] = 0;
+    }
 }
 
 // Destructor
-// Makes sure ncurses shuts down cleanly
 ULTIMA::~ULTIMA()
 {
     shutdown_curses();
 }
 
 // init_curses()
-// Starts ncurses mode and creates all interface windows
 void ULTIMA::init_curses()
 {
     initscr();
@@ -43,38 +50,30 @@ void ULTIMA::init_curses()
     noecho();
     curs_set(0);
     keypad(stdscr, TRUE);
-
-    // non-blocking input so the simulation can keep running
     nodelay(stdscr, TRUE);
 
     refresh();
 
-    heading_win_ = create_window(5, 106, 1, 2);
-    task_win_    = create_window(9, 52, 7, 2);
-    sema_win_    = create_window(9, 52, 7, 56);
-
-    // taller mailbox window
-    mailbox_win_ = create_window(15, 106, 17, 2);
-
-    // move log and console down and make them taller
-    log_win_     = create_window(14, 72, 32, 2);
-    console_win_ = create_window(14, 34, 32, 75);
+    heading_win_      = create_window(5, 132, 1, 2);
+    task_win_         = create_window(9, 64, 7, 2);
+    sema_win_         = create_window(9, 65, 7, 67);
+    mailbox_win_      = create_window(15, 130, 17, 2);
+    memory_usage_win_ = create_window(11, 130, 33, 2);
+    core_dump_win_    = create_window(18, 130, 45, 2);
+    log_win_          = create_window(12, 88, 64, 2);
+    console_win_      = create_window(12, 40, 64, 91);
 
     draw_log("----- ULTIMA Log Started -----");
 }
 
 // shutdown_curses()
-// Ends ncurses mode
 void ULTIMA::shutdown_curses()
 {
     if (stdscr != nullptr)
-    {
         endwin();
-    }
 }
 
 // create_window()
-// Creates an ncurses window and draws it
 WINDOW* ULTIMA::create_window(int height, int width, int y, int x)
 {
     WINDOW* win = newwin(height, width, y, x);
@@ -84,24 +83,21 @@ WINDOW* ULTIMA::create_window(int height, int width, int y, int x)
 }
 
 // initialize_scheduler()
-// Start the scheduler and create tasks
 void ULTIMA::initialize_scheduler()
 {
     draw_log("Scheduler started.");
 
     for (int i = 0; i < MAX_TASKS; i++)
-    {
         mcb_.Swapper.create_task();
-    }
 
     mcb_.Swapper.start();
     mcb_.InitIPC();
 
     draw_log("IPC initialized.");
+    draw_log("Memory manager initialized (1024 bytes, 128-byte pages).");
 }
 
 // draw_heading()
-// Draws the heading window
 void ULTIMA::draw_heading()
 {
     werase(heading_win_);
@@ -116,53 +112,35 @@ void ULTIMA::draw_heading()
     {
         elapsed = mcb_.Swapper.get_elapsed_time(current_task_id);
         remaining = quantum - (long)elapsed;
-
-        if (remaining < 0)
-        {
-            remaining = 0;
-        }
+        if (remaining < 0) remaining = 0;
     }
 
     mvwprintw(heading_win_, 1, 2, "ULTIMA Project");
     mvwprintw(heading_win_, 2, 2, "Current Task ID: %d", current_task_id);
-    mvwprintw(heading_win_, 3, 2, "Quantum: %ld   Elapsed: %ld   Remaining: %ld",
+    mvwprintw(heading_win_, 2, 34, "Quantum: %ld  Elapsed: %ld  Remaining: %ld",
               quantum, (long)elapsed, remaining);
+    mvwprintw(heading_win_, 3, 2, "Mem Left: %d  Largest Free: %d  Smallest Free: %d  Active Handles: %d",
+              mcb_.MemMgr.Mem_Left(),
+              mcb_.MemMgr.Mem_Largest(),
+              mcb_.MemMgr.Mem_Smallest(),
+              active_memory_handle_count());
 
     wrefresh(heading_win_);
 }
 
 // draw_tasks()
-// Draws the process table window
 void ULTIMA::draw_tasks()
 {
     werase(task_win_);
     box(task_win_, 0, 0);
 
     mvwprintw(task_win_, 1, 2, "Process Table Dump:");
-    mvwprintw(task_win_, 2, 2,
-              "%-12s %-8s %-10s %-8s",
-              "TaskName", "TaskID", "State", "Etc.");
-    mvwprintw(task_win_, 3, 2,
-              "----------------------------------------------");
+    mvwprintw(task_win_, 2, 2, "%-12s %-8s %-10s %-12s", "TaskName", "TaskID", "State", "MemHandle");
+    mvwprintw(task_win_, 3, 2, "----------------------------------------------------------");
 
     int line = 4;
-
-    // Loop over all tasks
     for (int i = 0; i < mcb_.Swapper.get_task_count(); i++)
     {
-        std::string task_name = "Task " + std::to_string(i);
-        std::string etc_text;
-
-        etc_text = std::to_string((int)mcb_.Swapper.get_elapsed_time(i));
-
-        // Show "Running" for the current task
-        if (i == mcb_.Swapper.get_task_id() && mcb_.Swapper.get_state(i) != DEAD)
-        {
-            etc_text = "Running";
-        }
-
-        // Check if task is physically in the circular list
-        // Only skip it if it has been removed by garbage()
         tcb* node = mcb_.Swapper.get_current();
         bool in_list = false;
         if (node)
@@ -182,19 +160,21 @@ void ULTIMA::draw_tasks()
         if (!in_list) continue;
         if (line >= 8) break;
 
-        mvwprintw(task_win_, line, 2,
-                  "%-12s %-8d %-10s %-8s",
-                  task_name.c_str(),
-                  i,
-                  mcb_.Swapper.get_state(i).c_str(),
-                  etc_text.c_str());
+        std::string task_name = "Task " + std::to_string(i);
+        char handle_text[16];
+        if (task_memory_handle_[i] >= 0)
+            snprintf(handle_text, sizeof(handle_text), "%d", task_memory_handle_[i]);
+        else
+            snprintf(handle_text, sizeof(handle_text), "None");
+
+        mvwprintw(task_win_, line, 2, "%-12s %-8d %-10s %-12s",
+                  task_name.c_str(), i, mcb_.Swapper.get_state(i).c_str(), handle_text);
         line++;
     }
     wrefresh(task_win_);
 }
 
 // draw_semaphore()
-// Draws the semaphore window
 void ULTIMA::draw_semaphore()
 {
     werase(sema_win_);
@@ -207,20 +187,18 @@ void ULTIMA::draw_semaphore()
     mvwprintw(sema_win_, 3, 2, "Sema_value: %d", current_sema->get_sema_value());
     mvwprintw(sema_win_, 4, 2, "Sema_queue: %s", current_sema->get_queue_string().c_str());
     mvwprintw(sema_win_, 5, 2, "Lucky_task: %d", current_sema->get_lucky_task());
-    mvwprintw(sema_win_, 7, 2, "Press 't' to toggle resource.");
+    mvwprintw(sema_win_, 7, 2, "t : toggle resource / d : down / u : up");
 
     wrefresh(sema_win_);
 }
 
 // draw_mailboxes()
-// Draws the mailbox dump
 void ULTIMA::draw_mailboxes()
 {
     werase(mailbox_win_);
     box(mailbox_win_, 0, 0);
 
     int task_id = selected_mailbox_;
-
     bool in_list = false;
     tcb* node = mcb_.Swapper.get_current();
     if (node)
@@ -244,20 +222,15 @@ void ULTIMA::draw_mailboxes()
     {
         mvwprintw(mailbox_win_, 3, 2, "Message Count: 0");
         mvwprintw(mailbox_win_, 5, 2, "(mailbox no longer exists)");
-        mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send");
+        mvwprintw(mailbox_win_, 13, 2, "m : switch / s : text / v : service / n : notification");
         wrefresh(mailbox_win_);
         return;
     }
 
     int message_count = mcb_.Messenger.Message_Count(task_id);
-
-    if (message_count < 0)
-    {
-        message_count = 0;
-    }
+    if (message_count < 0) message_count = 0;
 
     mvwprintw(mailbox_win_, 3, 2, "Message Count: %d", message_count);
-
     mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Message                            Size   Type            Time");
     mvwprintw(mailbox_win_, 6, 2, "--------------------------------------------------------------------------------");
 
@@ -268,7 +241,6 @@ void ULTIMA::draw_mailboxes()
     else
     {
         tcb* task = mcb_.Swapper.get_task(task_id);
-
         if (task != nullptr)
         {
             int row = 7;
@@ -297,13 +269,149 @@ void ULTIMA::draw_mailboxes()
         }
     }
 
-    mvwprintw(mailbox_win_, 13, 2, "m:switch  s/v/n:send");
-
+    mvwprintw(mailbox_win_, 13, 2, "m : switch / s : text / v : service / n : notification");
     wrefresh(mailbox_win_);
 }
 
+// helper
+int ULTIMA::find_task_for_handle(int handle) const
+{
+    if (handle <= 0) return -1;
+
+    for (int i = 0; i < MAX_TASKS; i++)
+    {
+        if (task_memory_handle_[i] == handle)
+            return i;
+    }
+    return -1;
+}
+
+// helper
+int ULTIMA::active_memory_handle_count() const
+{
+    int count = 0;
+    for (int i = 0; i < MAX_TASKS; i++)
+    {
+        if (task_memory_handle_[i] >= 0)
+            count++;
+    }
+    return count;
+}
+
+// draw_memory_usage()
+void ULTIMA::draw_memory_usage()
+{
+    werase(memory_usage_win_);
+    box(memory_usage_win_, 0, 0);
+
+    mvwprintw(memory_usage_win_, 1, 2, "Memory Usage:");
+    mvwprintw(memory_usage_win_, 2, 2,
+              "%-8s %-13s %-10s %-10s %-11s %-16s %-8s",
+              "Status", "MemHandle", "Start", "End", "Size", "CurrentLoc", "Task-ID");
+    mvwprintw(memory_usage_win_, 3, 2,
+              "------------------------------------------------------------------------------------------------------------");
+
+    int row = 4;
+    int total_blocks = mcb_.MemMgr.get_total_blocks();
+    int page_size = mcb_.MemMgr.get_page_size();
+
+    for (int i = 0; i < total_blocks && row <= 9; )
+    {
+        int handle = mcb_.MemMgr.get_block_handle(i);
+        int start_block = i;
+
+        while (i + 1 < total_blocks && mcb_.MemMgr.get_block_handle(i + 1) == handle)
+            i++;
+
+        int end_block = i;
+
+        int start_loc = start_block * page_size;
+        int end_loc = ((end_block + 1) * page_size) - 1;
+        int size_bytes = (end_block - start_block + 1) * page_size;
+
+        if (handle == 0)
+        {
+            mvwprintw(memory_usage_win_, row, 2,
+                      "%-8s %-13s %-10d %-10d %-11d %-16s %-8s",
+                      "Free", "-", start_loc, end_loc, size_bytes, "NA", "MMU");
+        }
+        else
+        {
+            int task_id = find_task_for_handle(handle);
+            char current_loc[16];
+            char task_text[16];
+
+            if (task_id >= 0)
+            {
+                snprintf(current_loc, sizeof(current_loc), "%d", start_loc + task_memory_cursor_[task_id]);
+                snprintf(task_text, sizeof(task_text), "%d", task_id);
+            }
+            else
+            {
+                snprintf(current_loc, sizeof(current_loc), "NA");
+                snprintf(task_text, sizeof(task_text), "?");
+            }
+
+            mvwprintw(memory_usage_win_, row, 2,
+                      "%-8s %-13d %-10d %-10d %-11d %-16s %-8s",
+                      "Used", handle, start_loc, end_loc, size_bytes, current_loc, task_text);
+        }
+
+        row++;
+        i++;
+    }
+
+    if (row == 4)
+        mvwprintw(memory_usage_win_, row, 2, "(no memory blocks to display)");
+
+    wrefresh(memory_usage_win_);
+}
+
+// draw_core_dump()
+void ULTIMA::draw_core_dump()
+{
+    werase(core_dump_win_);
+    box(core_dump_win_, 0, 0);
+    mvwprintw(core_dump_win_, 1, 2, "Memory CORE Dump:");
+
+    const unsigned char* mem = mcb_.MemMgr.get_memory();
+    int mem_size = mcb_.MemMgr.get_memory_size();
+    int bytes_per_line = 16;
+
+    int max_y, max_x;
+    getmaxyx(core_dump_win_, max_y, max_x);
+    (void)max_x;
+
+    int row = 2;
+
+    for (int offset = 0; offset < mem_size && row < max_y - 1; offset += bytes_per_line)
+    {
+        char hex_part[80] = {0};
+        char ascii_part[20] = {0};
+        int hex_index = 0;
+        int ascii_index = 0;
+
+        for (int i = 0; i < bytes_per_line && (offset + i) < mem_size; i++)
+        {
+            unsigned char value = mem[offset + i];
+
+            hex_index += snprintf(hex_part + hex_index,
+                                  sizeof(hex_part) - hex_index,
+                                  "%02X ", value);
+
+            ascii_part[ascii_index++] = (value >= 32 && value <= 126) ? (char)value : '.';
+        }
+
+        ascii_part[ascii_index] = '\0';
+
+        mvwprintw(core_dump_win_, row, 2, "%04d: %-48s %s", offset, hex_part, ascii_part);
+        row++;
+    }
+
+    wrefresh(core_dump_win_);
+}
+
 // draw_log()
-// Displays messages in the log window
 void ULTIMA::draw_log(const std::string& line)
 {
     if (log_win_ == nullptr)
@@ -311,6 +419,7 @@ void ULTIMA::draw_log(const std::string& line)
 
     int max_y, max_x;
     getmaxyx(log_win_, max_y, max_x);
+    (void)max_x;
 
     if (log_line_ >= max_y - 1)
     {
@@ -320,7 +429,6 @@ void ULTIMA::draw_log(const std::string& line)
         log_line_ = 2;
     }
 
-    // Make sure header is always present
     if (log_line_ == 1)
     {
         werase(log_win_);
@@ -331,41 +439,37 @@ void ULTIMA::draw_log(const std::string& line)
 
     mvwprintw(log_win_, log_line_, 2, "%s", line.c_str());
     log_line_++;
-
     wrefresh(log_win_);
 }
 
 // draw_console()
-// Draws the command help window for keyboard input
 void ULTIMA::draw_console()
 {
     werase(console_win_);
     box(console_win_, 0, 0);
 
     mvwprintw(console_win_, 1, 2, "Console Commands");
-    mvwprintw(console_win_, 2, 2, "m : Next mailbox");
-    mvwprintw(console_win_, 3, 2, "t : Toggle semaphore");
-    mvwprintw(console_win_, 4, 2, "s : Send text message ");
-    mvwprintw(console_win_, 5, 2, "v : Send service message");
-    mvwprintw(console_win_, 6, 2, "n : Send notify message");
-    mvwprintw(console_win_, 7, 2, "p/r : Pause / Resume");
-    mvwprintw(console_win_, 8, 2, "d/u : Down / Up");
-    mvwprintw(console_win_, 9, 2, "k/g/q : Kill / GC / Quit");
+    mvwprintw(console_win_, 2, 2, "p/r : pause/resume");
+    mvwprintw(console_win_, 3, 2, "a/f/z: allocate/free/free-only");
+    mvwprintw(console_win_, 4, 2, "w/x : write/read");
+    mvwprintw(console_win_, 5, 2, "k/g/q : kill/gc/quit");
+    mvwprintw(console_win_, 7, 2, "f = free+coalesce");
+    mvwprintw(console_win_, 8, 2, "z = free only");
 
     wrefresh(console_win_);
 }
 
 // draw_all()
-// Redraws all windows on the screen
 void ULTIMA::draw_all()
 {
     draw_heading();
     draw_tasks();
     draw_semaphore();
     draw_mailboxes();
+    draw_memory_usage();
+    draw_core_dump();
     draw_console();
 
-    // Keep log box visible even when no new message arrives
     if (log_win_ != nullptr)
     {
         box(log_win_, 0, 0);
@@ -374,17 +478,15 @@ void ULTIMA::draw_all()
     }
 }
 
+// waste_time()
 void ULTIMA::waste_time(int factor)
 {
     volatile long counter = 0;
     for (long i = 0; i < factor * 1000000L; i++)
-    {
         counter += i % 3;
-    }
 }
 
 // handle_input()
-// Handles keyboard inputs from the console
 void ULTIMA::handle_input(int ch)
 {
     switch (ch)
@@ -424,9 +526,7 @@ void ULTIMA::handle_input(int ch)
         }
 
         case 't':
-            selected_semaphore_++;
-            if (selected_semaphore_ > 1)
-                selected_semaphore_ = 0;
+            selected_semaphore_ = (selected_semaphore_ + 1) % 2;
             draw_log("Toggled semaphore view.");
             break;
 
@@ -541,6 +641,161 @@ void ULTIMA::handle_input(int ch)
             break;
         }
 
+        case 'a':
+        {
+            int current_task = mcb_.Swapper.get_task_id();
+
+            if (current_task < 0)
+                break;
+
+            if (task_memory_handle_[current_task] >= 0)
+            {
+                draw_log("Current task already owns a memory handle.");
+                break;
+            }
+
+            int request_size = 128;
+            int handle = mcb_.MemMgr.Mem_Alloc(request_size);
+
+            if (handle < 0)
+            {
+                draw_log("Memory allocation failed.");
+                break;
+            }
+
+            task_memory_handle_[current_task] = handle;
+            task_memory_request_size_[current_task] = request_size;
+            task_memory_cursor_[current_task] = 0;
+
+            char log_buffer[128];
+            snprintf(log_buffer, sizeof(log_buffer),
+                     "Task %d allocated %d bytes. Handle=%d",
+                     current_task, request_size, handle);
+            draw_log(log_buffer);
+            break;
+        }
+
+        case 'f':
+        {
+            int current_task = mcb_.Swapper.get_task_id();
+
+            if (current_task < 0)
+                break;
+
+            int handle = task_memory_handle_[current_task];
+            if (handle < 0)
+            {
+                draw_log("Current task has no memory to free.");
+                break;
+            }
+
+            if (mcb_.MemMgr.Mem_Free(handle) == 0)
+            {
+                task_memory_handle_[current_task] = -1;
+                task_memory_request_size_[current_task] = 0;
+                task_memory_cursor_[current_task] = 0;
+                draw_log("Memory freed and coalesced for current task.");
+            }
+            else
+            {
+                draw_log("Memory free failed.");
+            }
+            break;
+        }
+
+        case 'z':
+        {
+            int current_task = mcb_.Swapper.get_task_id();
+
+            if (current_task < 0)
+                break;
+
+            int handle = task_memory_handle_[current_task];
+            if (handle < 0)
+            {
+                draw_log("Current task has no memory to free.");
+                break;
+            }
+
+            if (mcb_.MemMgr.Mem_Free_NoCoalesce(handle) == 0)
+            {
+                task_memory_handle_[current_task] = -1;
+                task_memory_request_size_[current_task] = 0;
+                task_memory_cursor_[current_task] = 0;
+                draw_log("Memory freed without coalesce. #### visible in dump.");
+            }
+            else
+            {
+                draw_log("Memory free without coalesce failed.");
+            }
+            break;
+        }
+
+        case 'w':
+        {
+            int current_task = mcb_.Swapper.get_task_id();
+
+            if (current_task < 0)
+                break;
+
+            int handle = task_memory_handle_[current_task];
+            if (handle < 0)
+            {
+                draw_log("Allocate memory before writing.");
+                break;
+            }
+
+            char text[64];
+            snprintf(text, sizeof(text), "this is task %d", current_task);
+            int text_size = (int)strlen(text);
+
+            if (mcb_.MemMgr.Mem_Write(handle, 0, text_size, text) == 0)
+            {
+                task_memory_cursor_[current_task] = text_size;
+                draw_log("Sample text written to task memory.");
+            }
+            else
+            {
+                draw_log("Memory write failed.");
+            }
+            break;
+        }
+
+        case 'x':
+        {
+            int current_task = mcb_.Swapper.get_task_id();
+
+            if (current_task < 0)
+                break;
+
+            int handle = task_memory_handle_[current_task];
+            if (handle < 0)
+            {
+                draw_log("Allocate memory before reading.");
+                break;
+            }
+
+            char text[64];
+            memset(text, 0, sizeof(text));
+
+            int read_size = task_memory_cursor_[current_task];
+            if (read_size <= 0) read_size = 32;
+            if (read_size > (int)sizeof(text) - 1) read_size = sizeof(text) - 1;
+
+            if (mcb_.MemMgr.Mem_Read(handle, 0, read_size, text) == 0)
+            {
+                text[read_size] = '\0';
+                std::string line = "Read from memory: ";
+                line += text;
+                draw_log(line);
+            }
+            else
+            {
+                draw_log("Memory read failed.");
+            }
+            break;
+        }
+
         case 'k':
         {
             int current_task = mcb_.Swapper.get_task_id();
@@ -552,6 +807,15 @@ void ULTIMA::handle_input(int ch)
             {
                 draw_log("Current task owns resource. Releasing resource first.");
                 current_sema->up();
+            }
+
+            if (current_task >= 0 && task_memory_handle_[current_task] >= 0)
+            {
+                mcb_.MemMgr.Mem_Free(task_memory_handle_[current_task]);
+                task_memory_handle_[current_task] = -1;
+                task_memory_request_size_[current_task] = 0;
+                task_memory_cursor_[current_task] = 0;
+                draw_log("Killed task memory released.");
             }
 
             mcb_.Swapper.kill();
@@ -566,9 +830,7 @@ void ULTIMA::handle_input(int ch)
             for (int i = 0; i < mcb_.Swapper.get_task_count(); i++)
             {
                 if (mcb_.Swapper.get_state(i) == DEAD)
-                {
                     mcb_.Messenger.Message_DeleteAll(i);
-                }
             }
 
             mcb_.Swapper.garbage();
@@ -595,7 +857,6 @@ void ULTIMA::handle_input(int ch)
 }
 
 // run()
-// Starts ncurses, draws the UI, and keeps handling input
 void ULTIMA::run()
 {
     init_curses();
@@ -608,9 +869,7 @@ void ULTIMA::run()
         int ch = wgetch(stdscr);
 
         if (ch != ERR)
-        {
             handle_input(ch);
-        }
 
         if (!paused_)
         {
@@ -637,7 +896,6 @@ void ULTIMA::run()
         }
 
         draw_all();
-
         usleep(150000);
     }
 }

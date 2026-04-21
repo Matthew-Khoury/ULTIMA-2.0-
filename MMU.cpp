@@ -119,6 +119,40 @@ int mmu::Mem_Left()
     return free_blocks * page_size_;  // free_blocks * page_size_ = total memory left available
 }
 
+int mmu::Mem_Free_NoCoalesce(int memory_handle)
+{
+    if (memory_handle <= 0) return -1;
+
+    bool found = false;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == memory_handle)
+        {
+            found = true;
+            handle_table_[i] = 0;
+
+            int start = i * page_size_;
+            int end = start + page_size_;
+
+            for (int j = start; j < end; j++)
+                memory_[j] = '#';
+        }
+    }
+
+    if (!found) return -1;
+
+    return 0;
+}
+
+int mmu::get_block_handle(int block_index) const
+{
+    if (block_index < 0 || block_index >= total_blocks_)
+        return -1;
+
+    return handle_table_[block_index];
+}
+
 // return the size of the largest available memory segment (block)
 int mmu::Mem_Largest()
 {
