@@ -34,9 +34,6 @@ private:
     int selected_mailbox_;
     int selected_semaphore_;
 
-    int  task_memory_handle_[MAX_TASKS];
-    int  task_memory_request_size_[MAX_TASKS];
-    int  task_memory_cursor_[MAX_TASKS];
     bool show_core_dump_;
 
     void init_curses();
@@ -60,6 +57,7 @@ private:
 
     int find_task_for_handle(int handle) const;
     int active_memory_handle_count() const;
+    void free_task_memory(tcb* task);
 };
 
 #endif

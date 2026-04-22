@@ -196,7 +196,11 @@ int mmu::Mem_Smallest()
     }
 
     if (current_blocks > 0 && current_blocks < min_blocks)
+        min_blocks = current_blocks;
+
+    if (min_blocks == total_blocks_ + 1)
         return 0;  // no free memory available
+
     return min_blocks * page_size_;  // min_blocks * page_size = size of smallest available memory block
 }
 
@@ -227,13 +231,17 @@ int mmu::Mem_Coalesce()
 
 int mmu:: Mem_Read(int memory_handle, char *c){
 
-    
+
     if (memory_handle <= 0) return -1; // validate the handle
+
+    bool found = false;
 
     for (int i = 0; i < total_blocks_; i++)
     {
         if (handle_table_[i] == memory_handle) //ensure to read from the whole block
         {
+            found = true;
+
             int start = i * page_size_;
             int end = start + page_size_;
 
@@ -242,78 +250,110 @@ int mmu:: Mem_Read(int memory_handle, char *c){
                 *c = memory_[j];//copies from memory into buffer
                 c++;
             }
-            return 0;
         }
     }
+    if (found) return 0;
     return -1; // handle not found
 }
 int mmu:: Mem_Write(int memory_handle, char *c){
 
     if (memory_handle <= 0) return -1; // validate the handle
 
+    bool found = false;
+
     for (int i = 0; i < total_blocks_; i++)
     {
         if (handle_table_[i] == memory_handle) //ensure to write to the whole block
         {
+            found = true;
+
             int start = i * page_size_;
             int end = start + page_size_;
 
             for (int j = start; j < end; j++)
             {
-                memory_[j] = *c; //copies from buffer into memory 
+                memory_[j] = *c; //copies from buffer into memory
                 c++;
             }
-            return 0;
         }
     }
+    if (found) return 0;
     return -1; // handle not found
 }
 
 int mmu :: Mem_Read(int memory_handle, int offset_from_beg, int text_size, char *text){
     if (memory_handle <= 0) return -1; // validate the handle
+    if (offset_from_beg < 0 || text_size < 0) return -1;
+
+    int first_block = -1;
+    int block_count = 0;
 
     for (int i = 0; i < total_blocks_; i++)
     {
-        if (handle_table_[i] == memory_handle) //ensure to read from the whole block
+        if (handle_table_[i] == memory_handle)
         {
-            int start = i * page_size_ + offset_from_beg;
-            int end = start + text_size;
-
-            if (end > (i + 1) * page_size_) // validate the offset and size
-                return -1;
-
-            for (int j = start; j < end; j++)
-            {
-                *text = memory_[j]; //copies from memory into buffer
-                text++;
-            }
-            return 0;
+            if (first_block < 0)
+                first_block = i;
+            block_count++;
+        }
+        else if (first_block >= 0)
+        {
+            break;
         }
     }
-    return -1; // handle not found
+
+    if (first_block < 0) return -1; // handle not found
+
+    int total_size = block_count * page_size_;
+    if (offset_from_beg + text_size > total_size)
+        return -1;
+
+    int start = first_block * page_size_ + offset_from_beg;
+    int end = start + text_size;
+
+    for (int j = start; j < end; j++)
+    {
+        *text = memory_[j]; //copies from memory into buffer
+        text++;
+    }
+    return 0;
 }
 int mmu :: Mem_Write(int memory_handle, int offset_from_beg, int text_size, char *text){
     if (memory_handle <= 0) return -1; // validate the handle
+    if (offset_from_beg < 0 || text_size < 0) return -1;
+
+    int first_block = -1;
+    int block_count = 0;
 
     for (int i = 0; i < total_blocks_; i++)
     {
-        if (handle_table_[i] == memory_handle) //ensure to write to the whole block
+        if (handle_table_[i] == memory_handle)
         {
-            int start = i * page_size_ + offset_from_beg;
-            int end = start + text_size;
-
-            if (end > (i + 1) * page_size_) // validate the offset and size
-                return -1;
-
-            for (int j = start; j < end; j++)
-            {
-                memory_[j] = *text; //copies from buffer into memory 
-                text++;
-            }
-            return 0;
+            if (first_block < 0)
+                first_block = i;
+            block_count++;
+        }
+        else if (first_block >= 0)
+        {
+            break;
         }
     }
-    return -1; // handle not found
+
+    if (first_block < 0) return -1; // handle not found
+
+    int total_size = block_count * page_size_;
+    if (offset_from_beg + text_size > total_size)
+        return -1;
+
+    int start = first_block * page_size_ + offset_from_beg;
+    int end = start + text_size;
+
+    for (int j = start; j < end; j++)
+    {
+        memory_[j] = *text; //copies from buffer into memory
+        text++;
+    }
+    return 0;
 }
 
 // Dump the contents of the memory (typically we dump the entire memory)

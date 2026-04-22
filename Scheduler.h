@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
+#include <vector>
 #include "Queue.h"
 
 using namespace std;
@@ -22,17 +23,26 @@ extern const string DEAD;
 class Semaphore;  // forward declaration
 class ipc;        // forward declaration
 
+struct task_memory_region {
+    int handle;
+    int size;
+    int cursor;
+};
+
 struct tcb {
     int task_id;
     string state;
     clock_t start_time;
     tcb* next;
-    handle[] listofhandles
 
     // add mailbox pointer
     Queue<intptr_t> mailbox;
 
     Semaphore* mailbox_sema = nullptr;
+
+    // add memory tracking
+    vector<task_memory_region> memory_regions;
+    int active_region_index = -1;
 };
 
 class scheduler{
@@ -68,6 +78,12 @@ public:
     tcb *get_current();
 
     tcb* get_task(int task_id) {
+        if (task_id >= 0 && task_id < MAX_TASKS)
+            return &task_table[task_id];
+        return nullptr;
+    }
+
+    const tcb* get_task(int task_id) const {
         if (task_id >= 0 && task_id < MAX_TASKS)
             return &task_table[task_id];
         return nullptr;

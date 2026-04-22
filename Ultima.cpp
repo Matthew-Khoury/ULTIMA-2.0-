@@ -1,6 +1,5 @@
 /* Code Framework built from Lab 6
 Primary Author: Dylan Hurt
-Memory window integration update.
 */
 #include "Ultima.h"
 
@@ -28,12 +27,6 @@ ULTIMA::ULTIMA()
       selected_semaphore_(0),
       show_core_dump_(true)
 {
-    for (int i = 0; i < MAX_TASKS; i++)
-    {
-        task_memory_handle_[i] = -1;
-        task_memory_request_size_[i] = 0;
-        task_memory_cursor_[i] = 0;
-    }
 }
 
 // Destructor
@@ -94,7 +87,7 @@ void ULTIMA::initialize_scheduler()
     mcb_.InitIPC();
 
     draw_log("IPC initialized.");
-    draw_log("Memory manager initialized (1024 bytes, 128-byte pages).");
+    draw_log("Memory manager initialized.");
 }
 
 // draw_heading()
@@ -161,11 +154,20 @@ void ULTIMA::draw_tasks()
         if (line >= 8) break;
 
         std::string task_name = "Task " + std::to_string(i);
-        char handle_text[16];
-        if (task_memory_handle_[i] >= 0)
-            snprintf(handle_text, sizeof(handle_text), "%d", task_memory_handle_[i]);
+        char handle_text[32];
+        const tcb* task = mcb_.Swapper.get_task(i);
+
+        if (task && !task->memory_regions.empty() &&
+            task->active_region_index >= 0 &&
+            task->active_region_index < (int)task->memory_regions.size())
+        {
+            int handle = task->memory_regions[task->active_region_index].handle;
+            snprintf(handle_text, sizeof(handle_text), "%d (%d)", handle, (int)task->memory_regions.size());
+        }
         else
+        {
             snprintf(handle_text, sizeof(handle_text), "None");
+        }
 
         mvwprintw(task_win_, line, 2, "%-12s %-8d %-10s %-12s",
                   task_name.c_str(), i, mcb_.Swapper.get_state(i).c_str(), handle_text);
@@ -274,15 +276,20 @@ void ULTIMA::draw_mailboxes()
 }
 
 // helper
-// TODO: this is a potential bug that needs fixed for displaying the current_location and taskID of the allocated block of memory
 int ULTIMA::find_task_for_handle(int handle) const
 {
     if (handle <= 0) return -1;
 
     for (int i = 0; i < MAX_TASKS; i++)
     {
-        if (task_memory_handle_[i] == handle)
-            return i;
+        const tcb* task = mcb_.Swapper.get_task(i);
+        if (!task) continue;
+
+        for (int j = 0; j < (int)task->memory_regions.size(); j++)
+        {
+            if (task->memory_regions[j].handle == handle)
+                return i;
+        }
     }
     return -1;
 }
@@ -293,10 +300,25 @@ int ULTIMA::active_memory_handle_count() const
     int count = 0;
     for (int i = 0; i < MAX_TASKS; i++)
     {
-        if (task_memory_handle_[i] >= 0)
-            count++;
+        const tcb* task = mcb_.Swapper.get_task(i);
+        if (!task) continue;
+
+        count += task->memory_regions.size();
     }
     return count;
+}
+
+// helper
+void ULTIMA::free_task_memory(tcb* task)
+{
+    if (task == nullptr)
+        return;
+
+    for (int i = 0; i < (int)task->memory_regions.size(); i++)
+        mcb_.MemMgr.Mem_Free(task->memory_regions[i].handle);
+
+    task->memory_regions.clear();
+    task->active_region_index = -1;
 }
 
 // draw_memory_usage()
@@ -344,7 +366,22 @@ void ULTIMA::draw_memory_usage()
 
             if (task_id >= 0)
             {
-                snprintf(current_loc, sizeof(current_loc), "%d", start_loc + task_memory_cursor_[task_id]);
+                tcb* task = mcb_.Swapper.get_task(task_id);
+
+                int cursor = 0;
+                if (task)
+                {
+                    for (int j = 0; j < (int)task->memory_regions.size(); j++)
+                    {
+                        if (task->memory_regions[j].handle == handle)
+                        {
+                            cursor = task->memory_regions[j].cursor;
+                            break;
+                        }
+                    }
+                }
+
+                snprintf(current_loc, sizeof(current_loc), "%d", start_loc + cursor);
                 snprintf(task_text, sizeof(task_text), "%d", task_id);
             }
             else
@@ -454,6 +491,7 @@ void ULTIMA::draw_console()
     mvwprintw(console_win_, 3, 2, "a/f/z: allocate/free/free-only");
     mvwprintw(console_win_, 4, 2, "w/x : write/read");
     mvwprintw(console_win_, 5, 2, "k/g/q : kill/gc/quit");
+    mvwprintw(console_win_, 6, 2, "h : switch memory region");
     mvwprintw(console_win_, 7, 2, "f = free+coalesce");
     mvwprintw(console_win_, 8, 2, "z = free only");
 
@@ -644,20 +682,11 @@ void ULTIMA::handle_input(int ch)
 
         case 'a':
         {
-            int current_task = mcb_.Swapper.get_task_id();
-
-            if (current_task < 0)
+            tcb* task = mcb_.Swapper.get_current();
+            if (task == nullptr)
                 break;
 
-            // /*
-            // if (task_memory_handle_[current_task] >= 0)
-            // {
-            //     draw_log("Current task already owns a memory handle.");
-            //     break;
-            // } commented out for testing
-            // */
-
-            int request_size = 64; // TODO: test changing this value
+            int request_size = 64;
             int handle = mcb_.MemMgr.Mem_Alloc(request_size);
 
             if (handle < 0)
@@ -666,37 +695,46 @@ void ULTIMA::handle_input(int ch)
                 break;
             }
 
-            task_memory_handle_[current_task] = handle;
-            task_memory_request_size_[current_task] = request_size;
-            task_memory_cursor_[current_task] = 0;
+            task_memory_region region;
+            region.handle = handle;
+            region.size = request_size;
+            region.cursor = 0;
 
-            char log_buffer[128];
+            task->memory_regions.push_back(region);
+            task->active_region_index = (int)task->memory_regions.size() - 1;
+
+            char log_buffer[64];
             snprintf(log_buffer, sizeof(log_buffer),
                      "Task %d allocated %d bytes. Handle=%d",
-                     current_task, request_size, handle);
+                     task->task_id, request_size, handle);
             draw_log(log_buffer);
             break;
         }
 
         case 'f':
         {
-            int current_task = mcb_.Swapper.get_task_id();
+            tcb* task = mcb_.Swapper.get_current();
 
-            if (current_task < 0)
-                break;
-
-            int handle = task_memory_handle_[current_task];
-            if (handle < 0)
+            if (task == nullptr || task->memory_regions.empty() ||
+                task->active_region_index < 0 ||
+                task->active_region_index >= (int)task->memory_regions.size())
             {
-                draw_log("Current task has no memory to free.");
+                draw_log("Current task has no active memory region.");
                 break;
             }
 
+            int idx = task->active_region_index;
+            int handle = task->memory_regions[idx].handle;
+
             if (mcb_.MemMgr.Mem_Free(handle) == 0)
             {
-                task_memory_handle_[current_task] = -1;
-                task_memory_request_size_[current_task] = 0;
-                task_memory_cursor_[current_task] = 0;
+                task->memory_regions.erase(task->memory_regions.begin() + idx);
+
+                if (task->memory_regions.empty())
+                    task->active_region_index = -1;
+                else if (idx >= (int)task->memory_regions.size())
+                    task->active_region_index = (int)task->memory_regions.size() - 1;
+
                 draw_log("Memory freed and coalesced for current task.");
             }
             else
@@ -708,24 +746,29 @@ void ULTIMA::handle_input(int ch)
 
         case 'z':
         {
-            int current_task = mcb_.Swapper.get_task_id();
+            tcb* task = mcb_.Swapper.get_current();
 
-            if (current_task < 0)
-                break;
-
-            int handle = task_memory_handle_[current_task];
-            if (handle < 0)
+            if (task == nullptr || task->memory_regions.empty() ||
+                task->active_region_index < 0 ||
+                task->active_region_index >= (int)task->memory_regions.size())
             {
-                draw_log("Current task has no memory to free.");
+                draw_log("Current task has no active memory region.");
                 break;
             }
 
+            int idx = task->active_region_index;
+            int handle = task->memory_regions[idx].handle;
+
             if (mcb_.MemMgr.Mem_Free_NoCoalesce(handle) == 0)
             {
-                task_memory_handle_[current_task] = -1;
-                task_memory_request_size_[current_task] = 0;
-                task_memory_cursor_[current_task] = 0;
-                draw_log("Memory freed without coalesce. #### visible in dump.");
+                task->memory_regions.erase(task->memory_regions.begin() + idx);
+
+                if (task->memory_regions.empty())
+                    task->active_region_index = -1;
+                else if (idx >= (int)task->memory_regions.size())
+                    task->active_region_index = (int)task->memory_regions.size() - 1;
+
+                draw_log("Memory freed without coalesce.");
             }
             else
             {
@@ -736,25 +779,26 @@ void ULTIMA::handle_input(int ch)
 
         case 'w':
         {
-            int current_task = mcb_.Swapper.get_task_id();
+            tcb* task = mcb_.Swapper.get_current();
 
-            if (current_task < 0)
-                break;
-
-            int handle = task_memory_handle_[current_task];
-            if (handle < 0)
+            if (task == nullptr || task->memory_regions.empty() ||
+                task->active_region_index < 0 ||
+                task->active_region_index >= (int)task->memory_regions.size())
             {
                 draw_log("Allocate memory before writing.");
                 break;
             }
 
+            task_memory_region& region = task->memory_regions[task->active_region_index];
+            int handle = region.handle;
+
             char text[64];
-            snprintf(text, sizeof(text), "this is task %d", current_task);
+            snprintf(text, sizeof(text), "this is task %d", task->task_id);
             int text_size = (int)strlen(text);
 
             if (mcb_.MemMgr.Mem_Write(handle, 0, text_size, text) == 0)
             {
-                task_memory_cursor_[current_task] = text_size;
+                region.cursor = text_size;
                 draw_log("Sample text written to task memory.");
             }
             else
@@ -766,22 +810,23 @@ void ULTIMA::handle_input(int ch)
 
         case 'x':
         {
-            int current_task = mcb_.Swapper.get_task_id();
+            tcb* task = mcb_.Swapper.get_current();
 
-            if (current_task < 0)
-                break;
-
-            int handle = task_memory_handle_[current_task];
-            if (handle < 0)
+            if (task == nullptr || task->memory_regions.empty() ||
+                task->active_region_index < 0 ||
+                task->active_region_index >= (int)task->memory_regions.size())
             {
                 draw_log("Allocate memory before reading.");
                 break;
             }
 
+            task_memory_region& region = task->memory_regions[task->active_region_index];
+            int handle = region.handle;
+
             char text[64];
             memset(text, 0, sizeof(text));
 
-            int read_size = task_memory_cursor_[current_task];
+            int read_size = region.cursor;
             if (read_size <= 0) read_size = 32;
             if (read_size > (int)sizeof(text) - 1) read_size = sizeof(text) - 1;
 
@@ -799,6 +844,29 @@ void ULTIMA::handle_input(int ch)
             break;
         }
 
+        case 'h':
+        {
+            tcb* task = mcb_.Swapper.get_current();
+
+            if (task == nullptr || task->memory_regions.empty())
+            {
+                draw_log("Current task has no memory regions.");
+                break;
+            }
+
+            task->active_region_index++;
+            if (task->active_region_index >= (int)task->memory_regions.size())
+                task->active_region_index = 0;
+
+            char log_buffer[128];
+            snprintf(log_buffer, sizeof(log_buffer),
+                     "Task %d active handle=%d",
+                     task->task_id,
+                     task->memory_regions[task->active_region_index].handle);
+            draw_log(log_buffer);
+            break;
+        }
+
         case 'k':
         {
             int current_task = mcb_.Swapper.get_task_id();
@@ -812,12 +880,10 @@ void ULTIMA::handle_input(int ch)
                 current_sema->up();
             }
 
-            if (current_task >= 0 && task_memory_handle_[current_task] >= 0)
+            tcb* task = mcb_.Swapper.get_current();
+            if (task != nullptr)
             {
-                mcb_.MemMgr.Mem_Free(task_memory_handle_[current_task]);
-                task_memory_handle_[current_task] = -1;
-                task_memory_request_size_[current_task] = 0;
-                task_memory_cursor_[current_task] = 0;
+                free_task_memory(task);
                 draw_log("Killed task memory released.");
             }
 

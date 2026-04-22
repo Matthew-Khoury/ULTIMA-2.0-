@@ -21,6 +21,8 @@ scheduler::scheduler() {
     // Initialize each tcb's mailbox semaphore with this scheduler
     for (int i = 0; i < MAX_TASKS; i++) {
         task_table[i].mailbox_sema = nullptr;
+        task_table[i].memory_regions.clear();
+        task_table[i].active_region_index = -1;
     }
 }
 //this is a practice change
@@ -71,6 +73,9 @@ int scheduler::create_task() {
     new_task->task_id = id;
     new_task->state = READY;
     new_task->next = nullptr;
+
+    new_task->memory_regions.clear();
+    new_task->active_region_index = -1;
 
     // Allocate mailbox semaphore immediately
     new_task->mailbox_sema = new Semaphore(1, "Mailbox", this);
