@@ -47,17 +47,39 @@ void ULTIMA::init_curses()
 
     refresh();
 
-    heading_win_      = create_window(5, 132, 1, 2);
-    task_win_         = create_window(9, 64, 7, 2);
-    sema_win_         = create_window(9, 65, 7, 67);
-    mailbox_win_      = create_window(15, 130, 17, 2);
-    memory_usage_win_ = create_window(11, 130, 33, 2);
-    core_dump_win_    = create_window(18, 130, 45, 2);
-    log_win_          = create_window(12, 88, 64, 2);
-    console_win_      = create_window(12, 40, 64, 91);
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    int margin = 1;
+    int full_width = cols - 2;
+    int half_width = (full_width - 1) / 2;
+
+    heading_win_ = create_window(5, full_width, 0, margin);
+
+    task_win_ = create_window(9, half_width, 5, margin);
+    sema_win_ = create_window(9, full_width - half_width - 1, 5, margin + half_width + 1);
+
+    mailbox_win_ = create_window(12, full_width, 14, margin);
+    memory_usage_win_ = create_window(10, full_width, 26, margin);
+
+    int bottom_start = 36;
+    int bottom_height = rows - bottom_start - 1;
+
+    if (bottom_height < 10)
+        bottom_height = 10;
+
+    int log_width = (full_width * 2) / 3;
+    int console_width = full_width - log_width - 1;
+
+    core_dump_win_ = create_window(bottom_height / 2, full_width, bottom_start, margin);
+    log_win_ = create_window(bottom_height - (bottom_height / 2), log_width,
+                             bottom_start + (bottom_height / 2), margin);
+    console_win_ = create_window(bottom_height - (bottom_height / 2), console_width,
+                                 bottom_start + (bottom_height / 2), margin + log_width + 1);
 
     draw_log("----- ULTIMA Log Started -----");
 }
+
 
 // shutdown_curses()
 void ULTIMA::shutdown_curses()
