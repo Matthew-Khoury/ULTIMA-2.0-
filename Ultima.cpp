@@ -799,7 +799,7 @@ void ULTIMA::handle_input(int ch)
             if (mcb_.MemMgr.Mem_Write(handle, 0, text_size, text) == 0)
             {
                 region.cursor = text_size;
-                draw_log("Sample text written to task memory.");
+                draw_log("Write to memory.");
             }
             else
             {
