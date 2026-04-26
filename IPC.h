@@ -5,7 +5,7 @@
 
 #include <ctime>
 
-#define MAX_MSG_SIZE 32
+#define MAX_MSG_SIZE 256
 
 
 class scheduler;  // forward declaration
@@ -23,7 +23,7 @@ public:
 		time_t Message_Arrival_Time;
 		Message_Type Msg_Type;       // research time.h, time_t, and tm
 		int Msg_Size;
-		char Msg_Text[MAX_MSG_SIZE]; // let's make this up to 32 bytes long
+		char Msg_Text[MAX_MSG_SIZE];
 	};
 
 private:

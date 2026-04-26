@@ -8,6 +8,7 @@ Primary Author: Dylan Hurt
 #include <ctime>
 #include <string>
 #include <unistd.h>
+#include "AESMessageEncryption.h"
 
 // ULTIMA Constructor
 ULTIMA::ULTIMA()
@@ -59,10 +60,15 @@ void ULTIMA::init_curses()
     task_win_ = create_window(9, half_width, 5, margin);
     sema_win_ = create_window(9, full_width - half_width - 1, 5, margin + half_width + 1);
 
-    mailbox_win_ = create_window(12, full_width, 14, margin);
-    memory_usage_win_ = create_window(10, full_width, 26, margin);
+    const int mailbox_height = 20;
+    const int memory_height = 10;
+    const int mailbox_start = 14;
+    const int memory_start = mailbox_start + mailbox_height;
 
-    int bottom_start = 36;
+    mailbox_win_ = create_window(mailbox_height, full_width, mailbox_start, margin);
+    memory_usage_win_ = create_window(memory_height, full_width, memory_start, margin);
+
+    int bottom_start = memory_start + memory_height;
     int bottom_height = rows - bottom_start - 1;
 
     if (bottom_height < 10)
@@ -246,7 +252,7 @@ void ULTIMA::draw_mailboxes()
     {
         mvwprintw(mailbox_win_, 3, 2, "Message Count: 0");
         mvwprintw(mailbox_win_, 5, 2, "(mailbox no longer exists)");
-        mvwprintw(mailbox_win_, 13, 2, "m : switch / s : text / v : service / n : notification");
+        mvwprintw(mailbox_win_, 18, 2, "m : switch / s : text / v : service / n : notification");
         wrefresh(mailbox_win_);
         return;
     }
@@ -255,21 +261,29 @@ void ULTIMA::draw_mailboxes()
     if (message_count < 0) message_count = 0;
 
     mvwprintw(mailbox_win_, 3, 2, "Message Count: %d", message_count);
-    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Message                            Size   Type            Time");
-    mvwprintw(mailbox_win_, 6, 2, "--------------------------------------------------------------------------------");
+    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Encrypted Mailbox Message");
+    mvwprintw(mailbox_win_, 6, 2, "          Decrypted Message");
+    mvwprintw(mailbox_win_, 7, 2, "          Size   Type            Time");
+    mvwprintw(mailbox_win_, 8, 2, "--------------------------------------------------------------------------------------------------------------");
 
     if (message_count == 0)
     {
-        mvwprintw(mailbox_win_, 7, 2, "(empty)");
+        mvwprintw(mailbox_win_, 9, 2, "(empty)");
     }
     else
     {
         tcb* task = mcb_.Swapper.get_task(task_id);
         if (task != nullptr)
         {
-            int row = 7;
+            int row = 9;
 
-            for (int i = 0; i < task->mailbox.Size() && row <= 12; i++)
+            int max_y, max_x;
+            getmaxyx(mailbox_win_, max_y, max_x);
+            int message_width = max_x - 22;
+            if (message_width < 20)
+                message_width = 20;
+
+            for (int i = 0; i < task->mailbox.Size() && row < max_y - 4; i++)
             {
                 ipc::Message* msg = (ipc::Message*)(intptr_t)task->mailbox.Peek(i);
 
@@ -279,12 +293,39 @@ void ULTIMA::draw_mailboxes()
                     struct tm* tm_info = localtime(&msg->Message_Arrival_Time);
                     strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
 
-                    mvwprintw(mailbox_win_, row, 2,
-                              "%-4d %-4d %-34.34s %-6d %-15.15s %-10s",
+                    std::string decrypted_text = decryptMessage(msg->Msg_Text);
+                    int decrypted_size = (int)decrypted_text.length();
+                    std::string encrypted_text = msg->Msg_Text;
+
+                    if ((int)encrypted_text.length() > message_width)
+                        encrypted_text = encrypted_text.substr(0, message_width);
+
+                    int decrypted_width = message_width;
+                    if (decrypted_width < 20)
+                        decrypted_width = 20;
+
+                    if ((int)decrypted_text.length() > decrypted_width)
+                        decrypted_text = decrypted_text.substr(0, decrypted_width);
+
+                    mvwprintw(mailbox_win_, row, 2, "%-4d %-4d Encrypted: ",
                               msg->Source_Task_Id,
-                              msg->Destination_Task_Id,
-                              msg->Msg_Text,
-                              msg->Msg_Size,
+                              msg->Destination_Task_Id);
+                    waddnstr(mailbox_win_, encrypted_text.c_str(), message_width);
+
+                    row++;
+                    if (row >= max_y - 2)
+                        break;
+
+                    mvwprintw(mailbox_win_, row, 12, "Decrypted: ");
+                    waddnstr(mailbox_win_, decrypted_text.c_str(), decrypted_width);
+
+                    row++;
+                    if (row >= max_y - 2)
+                        break;
+
+                    mvwprintw(mailbox_win_, row, 12,
+                              "Size=%-5d Type=%-15.15s Time=%s",
+                              decrypted_size,
                               msg->Msg_Type.Message_Type_Description,
                               time_buffer);
                     row++;
@@ -293,7 +334,7 @@ void ULTIMA::draw_mailboxes()
         }
     }
 
-    mvwprintw(mailbox_win_, 13, 2, "m : switch / s : text / v : service / n : notification");
+    mvwprintw(mailbox_win_, 18, 2, "m : switch / s : text / v : service / n : notification");
     wrefresh(mailbox_win_);
 }
 

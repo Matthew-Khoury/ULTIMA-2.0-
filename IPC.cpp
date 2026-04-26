@@ -8,6 +8,7 @@
 #include <iostream>
 #include "Scheduler.h"
 #include "Semaphore.h"
+#include "AESMessageEncryption.h"
 
 using namespace std;
 
@@ -65,6 +66,15 @@ int ipc::Message_Send(Message* msg) {
     }
 
     msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+
+    // Encrypt the message text before placing it in the mailbox
+    string plain_text = msg->Msg_Text;
+    string encrypted_text = encryptMessage(plain_text);
+
+    // Copy encrypted text back into the message
+    strncpy(msg->Msg_Text, encrypted_text.c_str(), MAX_MSG_SIZE - 1);
+    msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+
     msg->Msg_Size = strlen(msg->Msg_Text);
 
     // Enqueue the message
@@ -97,6 +107,15 @@ int ipc::Message_Receive(int task_id, Message* msg) {
         memcpy(msg, queued_msg, sizeof(Message));
 
         msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+
+        // Decrypt the message after removing it from the mailbox
+        string encrypted_text = msg->Msg_Text;
+        string decrypted_text = decryptMessage(encrypted_text);
+
+        // Copy decrypted text back into the message
+        strncpy(msg->Msg_Text, decrypted_text.c_str(), MAX_MSG_SIZE - 1);
+        msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+
         msg->Msg_Size = strlen(msg->Msg_Text);
 
         if (msg->Msg_Type.Message_Type_Id == 0) {
