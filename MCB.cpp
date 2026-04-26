@@ -1,6 +1,7 @@
 // Created by Matthew Khoury
 
 #include "MCB.h"
+#include "CryptoUnit.h"
 
 // Constructor
 MCB::MCB()
@@ -9,7 +10,7 @@ MCB::MCB()
 	  Printer(1, "Printer", &Swapper),   // assign scheduler pointer
 	  Core(1, "Core Memory", &Swapper)   // core memory semaphore
 {
-	// At this point, scheduler is constructed, tasks may not exist yet
+	CryptoUnit::initialize();
 }
 
 // Initialize IPC

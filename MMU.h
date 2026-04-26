@@ -1,43 +1,54 @@
 #ifndef MMU_H
 #define MMU_H
 
-class mmu
+#include <vector>
+#include <map>
+
+struct crypto_meta
 {
+	std::vector<unsigned char> key;   // AES-256 key
+	std::vector<unsigned char> iv;    // AES-CTR IV
+};
+
+class mmu {
 private:
-    unsigned char* memory_;
-    int memory_size_;
-    int page_size_;
-    int total_blocks_;
+	unsigned char* memory_;
+	int* handle_table_;
 
-    int next_handle_;
+	int memory_size_;
+	int page_size_;
+	int total_blocks_;
 
-    int* handle_table_;   // stores which handle owns each block (0 = free)
+	int next_handle_;
+
+	std::map<int, crypto_meta> crypto_table_;
+
+	int find_handle_start(int handle);
 
 public:
-    mmu(int size, char default_initial_value, int page_size);
-    ~mmu();
+	mmu(int size, char default_initial_value, int page_size);
+	~mmu();
 
-    int Mem_Alloc(int size);
-    int Mem_Free(int memory_handle);
+	int Mem_Alloc(int size);
+	int Mem_Free(int memory_handle);
 	int Mem_Free_NoCoalesce(int memory_handle);
-    int Mem_Read(int memory_handle, char * ch);
-    int Mem_Write(int memory_handle, char * ch);
-    int Mem_Read(int memory_handle, int offset_from_beg, int text_size, char *text);
-    int Mem_Write(int memory_handle, int offset_from_beg, int text_size, char *text);
 
-    unsigned char* get_memory() const { return memory_; }
+	int Mem_Left();
+	int Mem_Largest();
+	int Mem_Smallest();
+	int Mem_Coalesce();
 
-    int Mem_Left();      // return the amount of core memory left in the OS
-    int Mem_Largest();   // return the size of the largest available memory segment
-    int Mem_Smallest();  // return the size of the smallest available memory segment
-    int Mem_Coalesce();  // combine two or more contiguous blocks of free space, and place '.' (dots) in the coalesced memory
+	int Mem_Write(int handle, int offset, int size, char* data);
+	int Mem_Read(int handle, int offset, int size, char* out);
 
+	int get_block_handle(int block_index) const;
+
+	// dump helpers used by ULTIMA
 	int get_total_blocks() const { return total_blocks_; }
 	int get_page_size() const { return page_size_; }
 	int get_memory_size() const { return memory_size_; }
-	int get_block_handle(int block_index) const;
-
-    void mmu_Mem_Dump();
+	const unsigned char* get_memory() const { return memory_; }
+	void mmu_Mem_Dump();
 };
 
 #endif

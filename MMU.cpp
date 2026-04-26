@@ -1,6 +1,13 @@
 #include "MMU.h"
+
+#include <openssl/rand.h>
+#include <openssl/evp.h>
 #include <iostream>
 #include <iomanip>
+#include <vector>
+#include <map>
+#include <cstring>
+#include <algorithm>
 
 using namespace std;
 
@@ -33,7 +40,7 @@ mmu::~mmu()
     delete[] handle_table_;
 }
 
-// Allocate memory
+// Allocate memory with AES metadata
 int mmu::Mem_Alloc(int size)
 {
     if (size <= 0) return -1;
@@ -54,26 +61,28 @@ int mmu::Mem_Alloc(int size)
             }
         }
 
-        if (free)
-        {
-            int handle = next_handle_++;
+        if (!free) continue;
 
-            // mark blocks
-            for (int j = 0; j < needed_blocks; j++)
-                handle_table_[i + j] = handle;
+        int handle = next_handle_++;
 
-            // mark memory
-            int start = i * page_size_;
-            int end = start + needed_blocks * page_size_;
+        for (int j = 0; j < needed_blocks; j++)
+            handle_table_[i + j] = handle;
 
-            for (int k = start; k < end; k++)
-                memory_[k] = 'A' + (handle % 26);
+        // ---------------- AES METADATA ----------------
+        crypto_meta meta;
 
-            return handle;
-        }
+        meta.key.resize(32);
+        meta.iv.resize(16);
+
+        RAND_bytes(meta.key.data(), 32);
+        RAND_bytes(meta.iv.data(), 16);
+
+        crypto_table_[handle] = meta;
+
+        return handle;
     }
 
-    return -1; // no space
+    return -1;
 }
 
 // Free memory
@@ -93,7 +102,7 @@ int mmu::Mem_Free(int memory_handle)
             int start = i * page_size_;
             int end = start + page_size_;
 
-            for (int j = start; j < end; j++)
+            for (int j = start; j < end && j < memory_size_; j++)
                 memory_[j] = '#';
         }
     }
@@ -105,18 +114,181 @@ int mmu::Mem_Free(int memory_handle)
     return 0;
 }
 
-// return the amount of core memory left in the OS
+// write (use AES-CTR encryption)
+int mmu::Mem_Write(int handle, int offset, int size, char* data)
+{
+    if (handle <= 0 || !data || size <= 0) return -1;
+
+    auto it = crypto_table_.find(handle);
+    if (it == crypto_table_.end()) return -1;
+
+    crypto_meta& meta = it->second;
+
+    vector<unsigned char> plain(data, data + size);
+    vector<unsigned char> cipher(size);
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
+
+    int len = 0;
+
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_ctr(), NULL,
+        meta.key.data(), meta.iv.data());
+
+    EVP_EncryptUpdate(ctx,
+        cipher.data(), &len,
+        plain.data(), plain.size());
+
+    cipher.resize(len);
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    int start = find_handle_start(handle);
+    if (start < 0) return -1;
+
+    for (int i = 0; i < (int)cipher.size() && (start + offset + i) < memory_size_; i++)
+        memory_[start + offset + i] = cipher[i];
+
+    std::cout << "[MMU] Encrypted write (AES-CTR)\n";
+
+    return 0;
+}
+
+// read (use AES-CTR encryption)
+int mmu::Mem_Read(int handle, int offset, int size, char* out)
+{
+    if (handle <= 0 || !out || size <= 0) return -1;
+
+    auto it = crypto_table_.find(handle);
+    if (it == crypto_table_.end()) return -1;
+
+    crypto_meta& meta = it->second;
+
+    int start = find_handle_start(handle);
+    if (start < 0) return -1;
+
+    vector<unsigned char> cipher;
+
+    for (int i = 0; i < size && (start + offset + i) < memory_size_; i++)
+        cipher.push_back(memory_[start + offset + i]);
+
+    vector<unsigned char> plain(cipher.size());
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
+
+    int len = 0;
+
+    EVP_DecryptInit_ex(ctx, EVP_aes_256_ctr(), NULL,
+        meta.key.data(), meta.iv.data());
+
+    EVP_DecryptUpdate(ctx,
+        plain.data(), &len,
+        cipher.data(), cipher.size());
+
+    plain.resize(len);
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    memcpy(out, plain.data(), min(size, (int)plain.size()));
+    std::cout << "[MMU] Decrypted read (AES-CTR)\n";
+
+    return 0;
+}
+
+int mmu::Mem_Coalesce()
+{
+    int freed = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0)
+        {
+            int start = i * page_size_;
+
+            for (int j = start; j < start + page_size_ && j < memory_size_; j++)
+            {
+                if (memory_[j] != '.')
+                {
+                    memory_[j] = '.';
+                    freed++;
+                }
+            }
+        }
+    }
+
+    return freed;
+}
+
 int mmu::Mem_Left()
 {
     int free_blocks = 0;
 
     for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == 0) // available (free) block
+        if (handle_table_[i] == 0)
             free_blocks++;
+
+    return free_blocks * page_size_;
+}
+
+int mmu::Mem_Largest()
+{
+    int max_blocks = 0, current = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0)
+        {
+            current++;
+            max_blocks = max(max_blocks, current);
+        }
+        else current = 0;
     }
 
-    return free_blocks * page_size_;  // free_blocks * page_size_ = total memory left available
+    return max_blocks * page_size_;
+}
+
+int mmu::Mem_Smallest()
+{
+    int min_blocks = total_blocks_ + 1;
+    int current = 0;
+
+    for (int i = 0; i < total_blocks_; i++)
+    {
+        if (handle_table_[i] == 0)
+            current++;
+        else
+        {
+            if (current > 0)
+                min_blocks = min(min_blocks, current);
+            current = 0;
+        }
+    }
+
+    if (current > 0)
+        min_blocks = min(min_blocks, current);
+
+    if (min_blocks == total_blocks_ + 1)
+        return 0;
+
+    return min_blocks * page_size_;
+}
+
+int mmu::get_block_handle(int block_index) const
+{
+    if (block_index < 0 || block_index >= total_blocks_)
+        return -1;
+
+    return handle_table_[block_index];
+}
+
+int mmu::find_handle_start(int handle)
+{
+    for (int i = 0; i < total_blocks_; i++)
+        if (handle_table_[i] == handle)
+            return i * page_size_;
+
+    return -1;
 }
 
 int mmu::Mem_Free_NoCoalesce(int memory_handle)
@@ -135,231 +307,17 @@ int mmu::Mem_Free_NoCoalesce(int memory_handle)
             int start = i * page_size_;
             int end = start + page_size_;
 
-            for (int j = start; j < end; j++)
+            for (int j = start; j < end && j < memory_size_; j++)
                 memory_[j] = '#';
         }
     }
 
-    if (!found) return -1;
+    crypto_table_.erase(memory_handle);
 
-    return 0;
+    return found ? 0 : -1;
 }
 
-int mmu::get_block_handle(int block_index) const
-{
-    if (block_index < 0 || block_index >= total_blocks_)
-        return -1;
-
-    return handle_table_[block_index];
-}
-
-// return the size of the largest available memory segment (block)
-int mmu::Mem_Largest()
-{
-    int max_blocks = 0;
-    int current_blocks = 0;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == 0) // available (free) block
-        {
-            current_blocks++;
-            if (current_blocks > max_blocks)
-                max_blocks = current_blocks;
-        }
-        else
-        {
-            current_blocks = 0;
-        }
-    }
-    return max_blocks * page_size_;  // max_blocks * page_size = size of largest available memory block
-}
-
-// return the size of the smallest available memory segment
-int mmu::Mem_Smallest()
-{
-    int min_blocks = total_blocks_ +1;
-    int current_blocks = 0;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == 0) // available (free) block
-        {
-            current_blocks++;
-        }
-        else
-        {
-            if (current_blocks > 0 && current_blocks < min_blocks)
-                min_blocks = current_blocks;
-            current_blocks = 0;
-        }
-    }
-
-    if (current_blocks > 0 && current_blocks < min_blocks)
-        min_blocks = current_blocks;
-
-    if (min_blocks == total_blocks_ + 1)
-        return 0;  // no free memory available
-
-    return min_blocks * page_size_;  // min_blocks * page_size = size of smallest available memory block
-}
-
-// combine two or more contiguous blocks of free space, and place '.' (dots) in the coalesced memory
-int mmu::Mem_Coalesce()
-{
-    int total_bytes = 0;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == 0) // available (free) block
-        {
-            int start = i * page_size_;
-            int end = start + page_size_;
-
-            for (int j = start; j < end; j++)
-            {
-                if (memory_[j] != '.') // avoid recounting
-                {
-                    memory_[j] = '.';
-                    total_bytes++;
-                }
-            }
-        }
-    }
-    return total_bytes;
-}
-
-int mmu:: Mem_Read(int memory_handle, char *c){
-
-
-    if (memory_handle <= 0) return -1; // validate the handle
-
-    bool found = false;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == memory_handle) //ensure to read from the whole block
-        {
-            found = true;
-
-            int start = i * page_size_;
-            int end = start + page_size_;
-
-            for (int j = start; j < end; j++)
-            {
-                *c = memory_[j];//copies from memory into buffer
-                c++;
-            }
-        }
-    }
-    if (found) return 0;
-    return -1; // handle not found
-}
-int mmu:: Mem_Write(int memory_handle, char *c){
-
-    if (memory_handle <= 0) return -1; // validate the handle
-
-    bool found = false;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == memory_handle) //ensure to write to the whole block
-        {
-            found = true;
-
-            int start = i * page_size_;
-            int end = start + page_size_;
-
-            for (int j = start; j < end; j++)
-            {
-                memory_[j] = *c; //copies from buffer into memory
-                c++;
-            }
-        }
-    }
-    if (found) return 0;
-    return -1; // handle not found
-}
-
-int mmu :: Mem_Read(int memory_handle, int offset_from_beg, int text_size, char *text){
-    if (memory_handle <= 0) return -1; // validate the handle
-    if (offset_from_beg < 0 || text_size < 0) return -1;
-
-    int first_block = -1;
-    int block_count = 0;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == memory_handle)
-        {
-            if (first_block < 0)
-                first_block = i;
-            block_count++;
-        }
-        else if (first_block >= 0)
-        {
-            break;
-        }
-    }
-
-    if (first_block < 0) return -1; // handle not found
-
-    int total_size = block_count * page_size_;
-    if (offset_from_beg + text_size > total_size)
-        return -1;
-
-    int start = first_block * page_size_ + offset_from_beg;
-    int end = start + text_size;
-
-    for (int j = start; j < end; j++)
-    {
-        *text = memory_[j]; //copies from memory into buffer
-        text++;
-    }
-    return 0;
-}
-int mmu :: Mem_Write(int memory_handle, int offset_from_beg, int text_size, char *text){
-    if (memory_handle <= 0) return -1; // validate the handle
-    if (offset_from_beg < 0 || text_size < 0) return -1;
-
-    int first_block = -1;
-    int block_count = 0;
-
-    for (int i = 0; i < total_blocks_; i++)
-    {
-        if (handle_table_[i] == memory_handle)
-        {
-            if (first_block < 0)
-                first_block = i;
-            block_count++;
-        }
-        else if (first_block >= 0)
-        {
-            break;
-        }
-    }
-
-    if (first_block < 0) return -1; // handle not found
-
-    int total_size = block_count * page_size_;
-    if (offset_from_beg + text_size > total_size)
-        return -1;
-
-    int start = first_block * page_size_ + offset_from_beg;
-    int end = start + text_size;
-
-    for (int j = start; j < end; j++)
-    {
-        memory_[j] = *text; //copies from buffer into memory
-        text++;
-    }
-    return 0;
-}
-
-// Dump the contents of the memory (typically we dump the entire memory)
-// TODO: Test and debug: this might have issues when page_size != 16
-void mmu::mmu_Mem_Dump()
-{
+void mmu::mmu_Mem_Dump() {
     cout << "Addr    HEX BYTES                                 | ASCII" << endl;
     cout << "-------------------------------------------------------------" << endl;
 

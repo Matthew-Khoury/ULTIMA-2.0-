@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <vector>
 #include "Queue.h"
+#include "IPC.h"
 
 using namespace std;
 
@@ -31,17 +32,16 @@ struct task_memory_region {
 
 struct tcb {
     int task_id;
-    string state;
+    std::string state;
     clock_t start_time;
     tcb* next;
 
     // add mailbox pointer
-    Queue<intptr_t> mailbox;
-
+    Queue<ipc::Message*> mailbox;
     Semaphore* mailbox_sema = nullptr;
 
     // add memory tracking
-    vector<task_memory_region> memory_regions;
+    std::vector<task_memory_region> memory_regions;
     int active_region_index = -1;
 };
 

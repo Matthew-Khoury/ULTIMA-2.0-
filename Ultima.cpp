@@ -2,13 +2,16 @@
 Primary Author: Dylan Hurt
 */
 #include "Ultima.h"
+#include "CryptoUnit.h"
 
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <string>
 #include <unistd.h>
-#include "AESMessageEncryption.h"
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <iostream>
 
 // ULTIMA Constructor
 ULTIMA::ULTIMA()
@@ -106,6 +109,8 @@ WINDOW* ULTIMA::create_window(int height, int width, int y, int x)
 // initialize_scheduler()
 void ULTIMA::initialize_scheduler()
 {
+    CryptoUnit::initialize();
+
     draw_log("Scheduler started.");
 
     for (int i = 0; i < MAX_TASKS; i++)
@@ -145,6 +150,7 @@ void ULTIMA::draw_heading()
               mcb_.MemMgr.Mem_Largest(),
               mcb_.MemMgr.Mem_Smallest(),
               active_memory_handle_count());
+    mvwprintw(heading_win_, 4, 2, "Crypto: AES-256-CTR (MMU) | RSA-2048 Hybrid (IPC)");
 
     wrefresh(heading_win_);
 }
@@ -261,11 +267,9 @@ void ULTIMA::draw_mailboxes()
     if (message_count < 0) message_count = 0;
 
     mvwprintw(mailbox_win_, 3, 2, "Message Count: %d", message_count);
-    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Encrypted Mailbox Message");
-    mvwprintw(mailbox_win_, 6, 2, "          Decrypted Message");
-    mvwprintw(mailbox_win_, 7, 2, "          Size   Type            Time");
-    mvwprintw(mailbox_win_, 8, 2, "--------------------------------------------------------------------------------------------------------------");
-
+    mvwprintw(mailbox_win_, 5, 2, "Src  Dst  Encrypted (Hex Preview)");
+    mvwprintw(mailbox_win_, 6, 2, "          Decrypted (Plaintext)");
+    mvwprintw(mailbox_win_, 7, 2, "          Enc/Dec Sizes + Type + Time");
     if (message_count == 0)
     {
         mvwprintw(mailbox_win_, 9, 2, "(empty)");
@@ -287,49 +291,63 @@ void ULTIMA::draw_mailboxes()
             {
                 ipc::Message* msg = (ipc::Message*)(intptr_t)task->mailbox.Peek(i);
 
-                if (msg != nullptr)
+                char time_buffer[16] = "N/A";
+
+                if (msg->Message_Arrival_Time != 0)
                 {
-                    char time_buffer[16];
                     struct tm* tm_info = localtime(&msg->Message_Arrival_Time);
                     strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
-
-                    std::string decrypted_text = decryptMessage(msg->Msg_Text);
-                    int decrypted_size = (int)decrypted_text.length();
-                    std::string encrypted_text = msg->Msg_Text;
-
-                    if ((int)encrypted_text.length() > message_width)
-                        encrypted_text = encrypted_text.substr(0, message_width);
-
-                    int decrypted_width = message_width;
-                    if (decrypted_width < 20)
-                        decrypted_width = 20;
-
-                    if ((int)decrypted_text.length() > decrypted_width)
-                        decrypted_text = decrypted_text.substr(0, decrypted_width);
-
-                    mvwprintw(mailbox_win_, row, 2, "%-4d %-4d Encrypted: ",
-                              msg->Source_Task_Id,
-                              msg->Destination_Task_Id);
-                    waddnstr(mailbox_win_, encrypted_text.c_str(), message_width);
-
-                    row++;
-                    if (row >= max_y - 2)
-                        break;
-
-                    mvwprintw(mailbox_win_, row, 12, "Decrypted: ");
-                    waddnstr(mailbox_win_, decrypted_text.c_str(), decrypted_width);
-
-                    row++;
-                    if (row >= max_y - 2)
-                        break;
-
-                    mvwprintw(mailbox_win_, row, 12,
-                              "Size=%-5d Type=%-15.15s Time=%s",
-                              decrypted_size,
-                              msg->Msg_Type.Message_Type_Description,
-                              time_buffer);
-                    row++;
                 }
+
+                std::string encrypted_preview = "(hidden)";
+
+                // Show encrypted size only (NO raw parsing anymore)
+                int encrypted_size = (int)msg->packet.cipher.size();
+
+                std::string decrypted_text = msg->plaintext;
+                if (decrypted_text.empty())
+                    decrypted_text = "(not decrypted yet)";
+
+                char type_char = 'U';
+
+                switch (msg->Msg_Type.Message_Type_Id)
+                {
+                    case 0: type_char = 'T'; break;
+                    case 1: type_char = 'S'; break;
+                    case 2: type_char = 'N'; break;
+                }
+
+                mvwprintw(mailbox_win_, row, 2,
+                    "%-4d %-4d Encrypted(%dB): %s",
+                    msg->Source_Task_Id,
+                    msg->Destination_Task_Id,
+                    encrypted_size,
+                    encrypted_preview.c_str()
+                );
+
+                row++;
+
+                if (row >= max_y - 2)
+                    break;
+
+                mvwprintw(mailbox_win_, row, 12,
+                    "Decrypted: %s",
+                    decrypted_text.c_str()
+                );
+
+                row++;
+
+                if (row >= max_y - 2)
+                    break;
+
+                mvwprintw(mailbox_win_, row, 12,
+                    "[%c] Type=%s Time=%s",
+                    type_char,
+                    msg->Msg_Type.Message_Type_Description.c_str(),
+                    time_buffer
+                );
+
+                row++;
             }
         }
     }
@@ -647,12 +665,25 @@ void ULTIMA::handle_input(int ch)
             msg->Source_Task_Id = source_task;
             msg->Destination_Task_Id = dest_task;
             msg->Msg_Type.Message_Type_Id = 0;
-            snprintf(msg->Msg_Text, MAX_MSG_SIZE,
+            char buffer[MAX_MSG_SIZE];
+            snprintf(buffer, MAX_MSG_SIZE,
                      "Message from task %d to task %d.",
                      source_task, dest_task);
+            msg->plaintext = buffer;
 
-            if (mcb_.Messenger.Message_Send(msg) == 1)
+            if (mcb_.Messenger.Message_Send(msg) == 1) {
+                std::string cipher_preview;
+
+                for (size_t i = 0; i < msg->packet.cipher.size() && i < 16; i++)
+                {
+                    char buf[4];
+                    snprintf(buf, sizeof(buf), "%02X ", msg->packet.cipher[i]);
+                    cipher_preview += buf;
+                }
+
+                draw_log("Encrypted payload (preview): " + cipher_preview);
                 draw_log("Text message sent.");
+            }
             else
             {
                 delete msg;
@@ -676,11 +707,23 @@ void ULTIMA::handle_input(int ch)
             msg->Source_Task_Id = source_task;
             msg->Destination_Task_Id = dest_task;
             msg->Msg_Type.Message_Type_Id = 1;
-            strncpy(msg->Msg_Text, "lpr file1", MAX_MSG_SIZE - 1);
-            msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+            msg->plaintext = "lpr file1";
+            msg->plaintext[MAX_MSG_SIZE - 1] = '\0';
 
-            if (mcb_.Messenger.Message_Send(msg) == 1)
+            if (mcb_.Messenger.Message_Send(msg) == 1) {
+                std::string cipher_preview;
+
+                for (size_t i = 0; i < msg->packet.cipher.size() && i < 16; i++)
+                {
+                    char buf[4];
+                    snprintf(buf, sizeof(buf), "%02X ", msg->packet.cipher[i]);
+                    cipher_preview += buf;
+                }
+
+                draw_log("Encrypted payload (preview): " + cipher_preview);
+                draw_log("Text message sent.");
                 draw_log("Service message sent.");
+            }
             else
             {
                 delete msg;
@@ -704,11 +747,23 @@ void ULTIMA::handle_input(int ch)
             msg->Source_Task_Id = source_task;
             msg->Destination_Task_Id = dest_task;
             msg->Msg_Type.Message_Type_Id = 2;
-            strncpy(msg->Msg_Text, "Got your print service request", MAX_MSG_SIZE - 1);
-            msg->Msg_Text[MAX_MSG_SIZE - 1] = '\0';
+            msg->plaintext = "lpr file1";
+            msg->plaintext[MAX_MSG_SIZE - 1] = '\0';
 
-            if (mcb_.Messenger.Message_Send(msg) == 1)
+            if (mcb_.Messenger.Message_Send(msg) == 1) {
+                std::string cipher_preview;
+
+                for (size_t i = 0; i < msg->packet.cipher.size() && i < 16; i++)
+                {
+                    char buf[4];
+                    snprintf(buf, sizeof(buf), "%02X ", msg->packet.cipher[i]);
+                    cipher_preview += buf;
+                }
+
+                draw_log("Encrypted payload (preview): " + cipher_preview);
+                draw_log("Text message sent.");
                 draw_log("Notification sent.");
+            }
             else
             {
                 delete msg;
@@ -1017,11 +1072,22 @@ void ULTIMA::run()
 
                 if (result == 1)
                 {
-                    char log_buffer[160];
+                    std::string cipher_preview;
+
+                    for (size_t i = 0; i < received_msg.packet.cipher.size() && i < 16; i++)
+                    {
+                        char buf[4];
+                        snprintf(buf, sizeof(buf), "%02X ", received_msg.packet.cipher[i]);
+                        cipher_preview += buf;
+                    }
+
+                    char log_buffer[256];
                     snprintf(log_buffer, sizeof(log_buffer),
-                             "Task %d received: %s",
+                             "RX Task %d | ENC: %s | DEC: %s",
                              running_task,
-                             received_msg.Msg_Text);
+                             cipher_preview.c_str(),
+                             received_msg.plaintext);
+
                     draw_log(log_buffer);
                 }
             }

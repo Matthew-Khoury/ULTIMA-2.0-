@@ -3,27 +3,35 @@
 #ifndef IPC_H
 #define IPC_H
 
+#pragma once
+#include <string>
 #include <ctime>
+#include "CryptoUnit.h"
 
 #define MAX_MSG_SIZE 256
-
 
 class scheduler;  // forward declaration
 
 class ipc {
 public:
-	struct Message_Type {
+	struct MessageType
+	{
 		int Message_Type_Id;
-		char Message_Type_Description[64];
+		std::string Message_Type_Description = "Text";
 	};
 
-	struct Message {
+	struct Message
+	{
 		int Source_Task_Id;
 		int Destination_Task_Id;
+
+		MessageType Msg_Type;
+
 		time_t Message_Arrival_Time;
-		Message_Type Msg_Type;       // research time.h, time_t, and tm
-		int Msg_Size;
-		char Msg_Text[MAX_MSG_SIZE];
+
+		CryptoPacket packet;   // encrypted payload
+
+		std::string plaintext; // decrypted view (optional cache)
 	};
 
 private:
