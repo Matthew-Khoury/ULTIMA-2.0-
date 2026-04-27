@@ -8,10 +8,31 @@ Primary Author: Dylan Hurt
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <vector>
 #include <unistd.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <iostream>
+
+static std::string hex_preview(const std::vector<unsigned char>& bytes, size_t max_bytes = 16)
+{
+    std::string preview;
+
+    for (size_t i = 0; i < bytes.size() && i < max_bytes; i++)
+    {
+        char buf[4];
+        snprintf(buf, sizeof(buf), "%02X ", bytes[i]);
+        preview += buf;
+    }
+
+    if (preview.empty())
+        return "(empty)";
+
+    if (bytes.size() > max_bytes)
+        preview += "...";
+
+    return preview;
+}
 
 // ULTIMA Constructor
 ULTIMA::ULTIMA()
@@ -58,18 +79,21 @@ void ULTIMA::init_curses()
     int full_width = cols - 2;
     int half_width = (full_width - 1) / 2;
 
-    heading_win_ = create_window(5, full_width, 0, margin);
+	const int heading_height = 6;
+	const int top_panel_start = heading_height;
 
-    task_win_ = create_window(9, half_width, 5, margin);
-    sema_win_ = create_window(9, full_width - half_width - 1, 5, margin + half_width + 1);
+	heading_win_ = create_window(heading_height, full_width, 0, margin);
 
-    const int mailbox_height = 20;
-    const int memory_height = 10;
-    const int mailbox_start = 14;
-    const int memory_start = mailbox_start + mailbox_height;
+	task_win_ = create_window(9, half_width, top_panel_start, margin);
+	sema_win_ = create_window(9, full_width - half_width - 1, top_panel_start, margin + half_width + 1);
 
-    mailbox_win_ = create_window(mailbox_height, full_width, mailbox_start, margin);
-    memory_usage_win_ = create_window(memory_height, full_width, memory_start, margin);
+	const int mailbox_height = 20;
+	const int memory_height = 10;
+	const int mailbox_start = top_panel_start + 9;
+	const int memory_start = mailbox_start + mailbox_height;
+
+	mailbox_win_ = create_window(mailbox_height, full_width, mailbox_start, margin);
+	memory_usage_win_ = create_window(memory_height, full_width, memory_start, margin);
 
     int bottom_start = memory_start + memory_height;
     int bottom_height = rows - bottom_start - 1;
@@ -299,7 +323,7 @@ void ULTIMA::draw_mailboxes()
                     strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
                 }
 
-                std::string encrypted_preview = "(hidden)";
+                std::string encrypted_preview = hex_preview(msg->packet.cipher);
 
                 // Show encrypted size only (NO raw parsing anymore)
                 int encrypted_size = (int)msg->packet.cipher.size();
@@ -665,6 +689,7 @@ void ULTIMA::handle_input(int ch)
             msg->Source_Task_Id = source_task;
             msg->Destination_Task_Id = dest_task;
             msg->Msg_Type.Message_Type_Id = 0;
+            msg->Msg_Type.Message_Type_Description = "Text";
             char buffer[MAX_MSG_SIZE];
             snprintf(buffer, MAX_MSG_SIZE,
                      "Message from task %d to task %d.",
@@ -672,16 +697,9 @@ void ULTIMA::handle_input(int ch)
             msg->plaintext = buffer;
 
             if (mcb_.Messenger.Message_Send(msg) == 1) {
-                std::string cipher_preview;
+                std::string cipher_preview = hex_preview(msg->packet.cipher);
 
-                for (size_t i = 0; i < msg->packet.cipher.size() && i < 16; i++)
-                {
-                    char buf[4];
-                    snprintf(buf, sizeof(buf), "%02X ", msg->packet.cipher[i]);
-                    cipher_preview += buf;
-                }
-
-                draw_log("Encrypted payload (preview): " + cipher_preview);
+                draw_log("Encrypted payload: " + cipher_preview);
                 draw_log("Text message sent.");
             }
             else
@@ -707,21 +725,13 @@ void ULTIMA::handle_input(int ch)
             msg->Source_Task_Id = source_task;
             msg->Destination_Task_Id = dest_task;
             msg->Msg_Type.Message_Type_Id = 1;
+            msg->Msg_Type.Message_Type_Description = "Service";
             msg->plaintext = "lpr file1";
-            msg->plaintext[MAX_MSG_SIZE - 1] = '\0';
 
             if (mcb_.Messenger.Message_Send(msg) == 1) {
-                std::string cipher_preview;
+                std::string cipher_preview = hex_preview(msg->packet.cipher);
 
-                for (size_t i = 0; i < msg->packet.cipher.size() && i < 16; i++)
-                {
-                    char buf[4];
-                    snprintf(buf, sizeof(buf), "%02X ", msg->packet.cipher[i]);
-                    cipher_preview += buf;
-                }
-
-                draw_log("Encrypted payload (preview): " + cipher_preview);
-                draw_log("Text message sent.");
+                draw_log("Encrypted payload: " + cipher_preview);
                 draw_log("Service message sent.");
             }
             else
@@ -747,21 +757,13 @@ void ULTIMA::handle_input(int ch)
             msg->Source_Task_Id = source_task;
             msg->Destination_Task_Id = dest_task;
             msg->Msg_Type.Message_Type_Id = 2;
-            msg->plaintext = "lpr file1";
-            msg->plaintext[MAX_MSG_SIZE - 1] = '\0';
+            msg->Msg_Type.Message_Type_Description = "Notification";
+            msg->plaintext = "Notify: service request queued.";
 
             if (mcb_.Messenger.Message_Send(msg) == 1) {
-                std::string cipher_preview;
+                std::string cipher_preview = hex_preview(msg->packet.cipher);
 
-                for (size_t i = 0; i < msg->packet.cipher.size() && i < 16; i++)
-                {
-                    char buf[4];
-                    snprintf(buf, sizeof(buf), "%02X ", msg->packet.cipher[i]);
-                    cipher_preview += buf;
-                }
-
-                draw_log("Encrypted payload (preview): " + cipher_preview);
-                draw_log("Text message sent.");
+                draw_log("Encrypted payload: " + cipher_preview);
                 draw_log("Notification sent.");
             }
             else
@@ -1072,21 +1074,14 @@ void ULTIMA::run()
 
                 if (result == 1)
                 {
-                    std::string cipher_preview;
-
-                    for (size_t i = 0; i < received_msg.packet.cipher.size() && i < 16; i++)
-                    {
-                        char buf[4];
-                        snprintf(buf, sizeof(buf), "%02X ", received_msg.packet.cipher[i]);
-                        cipher_preview += buf;
-                    }
+                    std::string cipher_preview = hex_preview(received_msg.packet.cipher);
 
                     char log_buffer[256];
                     snprintf(log_buffer, sizeof(log_buffer),
                              "RX Task %d | ENC: %s | DEC: %s",
                              running_task,
                              cipher_preview.c_str(),
-                             received_msg.plaintext);
+                             received_msg.plaintext.c_str());
 
                     draw_log(log_buffer);
                 }
