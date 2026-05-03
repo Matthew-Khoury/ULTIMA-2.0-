@@ -24,7 +24,9 @@ add_executable(ULTIMA_2_0_
         IPC.h
         MCB.cpp
         MCB.h
-        MCB.cpp)
+        MCB.cpp
+        CryptoUnit.cpp
+        CryptoUnit.h)
 
 # 4. Link the ncurses library
 target_link_libraries(ULTIMA_2_0_ ${CURSES_LIBRARIES})
