@@ -321,7 +321,7 @@ void mmu::mmu_Mem_Dump() {
     cout << "Addr    HEX BYTES                                 | ASCII" << endl;
     cout << "-------------------------------------------------------------" << endl;
 
-    const int bytes_per_line = 16; // TODO: this is a possible problem
+    const int bytes_per_line = 16;
 
     for (int i = 0; i < memory_size_; i += bytes_per_line)
     {

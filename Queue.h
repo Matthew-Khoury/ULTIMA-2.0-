@@ -35,7 +35,7 @@ private:
 // Queue constructor
 template <class TYPE>
 Queue<TYPE>::Queue() {
-    capacity = 10;              // TODO: discuss the initial capacity
+    capacity = 10;
     data = new TYPE[capacity];
     front = 0;
     back = 0;
